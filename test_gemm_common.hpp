@@ -79,11 +79,11 @@ void writeToFile(const test_params& params, int8_t* A, int8_t* B, int32_t* C) {
     myfile << "int ldc = " << params.ldc << ";\n";
     myfile << "bool expect_to_fail = " << params.expect_to_fail << ";\n";
     
-    myfile << "alignas(64) std::array<int8_t, M*N> A = {";
+    myfile << "alignas(64) std::array<int8_t, M*K> A = {";
     for (int i = 0; i < params.M; i++) {
-        for (int j = 0; j<params.N; j++) {
+        for (int j = 0; j<params.K; j++) {
             myfile << int(A[i*j + j]);
-            if (!(i == params.M - 1 && j == params.N -1)) {
+            if (!(i == params.M - 1 && j == params.K -1)) {
                 myfile << ",";
             } else {
                 myfile << "};";
@@ -96,7 +96,7 @@ void writeToFile(const test_params& params, int8_t* A, int8_t* B, int32_t* C) {
     myfile << "alignas(64) std::array<int8_t, N*K> B = {";
     for (int i = 0; i < params.N; i++) {
         for (int j = 0; j<params.K; j++) {
-            myfile << int(A[i*j + j]);
+            myfile << int(B[i*j + j]);
             if (!(i == params.N - 1 && j == params.K -1)) {
                 myfile << ",";
             } else {
@@ -107,11 +107,11 @@ void writeToFile(const test_params& params, int8_t* A, int8_t* B, int32_t* C) {
     }
     myfile << "\n\n";
     
-    myfile << "alignas(64) std::array<int32_t, M*K> C = {";
+    myfile << "alignas(64) std::array<int32_t, M*N> C = {";
     for (int i = 0; i < params.M; i++) {
-        for (int j = 0; j<params.K; j++) {
-            myfile << int(A[i*j + j]);
-            if (!(i == params.M - 1 && j == params.K -1)) {
+        for (int j = 0; j<params.N; j++) {
+            myfile << int(C[i*j + j]);
+            if (!(i == params.M - 1 && j == params.N -1)) {
                 myfile << ",";
             } else {
                 myfile << "};";
