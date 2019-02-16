@@ -2,6 +2,8 @@
 #include <eigen3/Eigen/Dense>
 #include <iostream>
 #include <mkldnn.h>
+#include <chrono>
+#include "intgemm.h"
 
 /*
 template <typename data_t>
@@ -147,7 +149,7 @@ int main(int argc, char const *argv[]) {
     std::cout << c_eigen << std::endl;
 
     //MKLGEMM
-
+{
 //New Matrix:
 //New Matrix:
 char offsetc = 'F';
@@ -161,9 +163,9 @@ const int N = 20;
 const int K = 10;
 float alpha = 2;
 float beta = 1;
-int lda = 30;
-int ldb = 10;
-int ldc = 30;
+int lda = M;
+int ldb = K;
+int ldc = M;
 bool expect_to_fail = 0;
 
 //Those are likely COL_MAJOR
@@ -252,14 +254,21 @@ alignas(64) std::array<int32_t, M*N> C = {-7,1,-8,-8,-5,0,3,-7,-2,-7,7,-5,8,5,2,
                                         6,1,10,-6,7,0,-4,6,10,-9,-9,0,-9,-3,-2,2,-8,-5,4,-9,
                                         3,8,7,-8,3,-5,3,-5,10,-5,-8,-10,2,-3,7,-9,1,-6,6,-10};
 
-Eigen::Matrix<int32_t, M,K> A_eigen = Eigen::Map<const Eigen::Matrix<int8_t, M, K, Eigen::ColMajor>>(A.data()).cast<int32_t>();
-Eigen::Matrix<int32_t, K,N> B_eigen = Eigen::Map<const Eigen::Matrix<int8_t, K, N, Eigen::ColMajor>>(B.data()).cast<int32_t>();
-Eigen::Matrix<int32_t, M,N> C_eigen = Eigen::Map<Eigen::Matrix<int32_t, M, N, Eigen::ColMajor>>(C.data());
+//Eigen sanity check matrices
+alignas(64) Eigen::Matrix<int32_t, M,K> A_eigen = Eigen::Map<const Eigen::Matrix<int8_t, M, K, Eigen::ColMajor>>(A.data()).cast<int32_t>();
+alignas(64) Eigen::Matrix<int32_t, K,N> B_eigen = Eigen::Map<const Eigen::Matrix<int8_t, K, N, Eigen::ColMajor>>(B.data()).cast<int32_t>();
+alignas(64) Eigen::Matrix<int32_t, M,N> C_eigen = Eigen::Map<Eigen::Matrix<int32_t, M, N, Eigen::ColMajor>>(C.data());
 
+//Kenneth's matrices
+Eigen::Matrix<int8_t, M,K, Eigen::RowMajor> A_kenn = Eigen::Map<const Eigen::Matrix<int8_t, M, K, Eigen::ColMajor>>(A.data());
+Eigen::Matrix<int8_t, K,N, Eigen::RowMajor> B_kenn = Eigen::Map<const Eigen::Matrix<int8_t, K, N, Eigen::ColMajor>>(B.data());
+Eigen::Matrix<int32_t, M,N, Eigen::RowMajor> C_kenn = Eigen::Map<const Eigen::Matrix<int32_t, M, N, Eigen::ColMajor>>(C.data());
+
+auto eigen_start = std::chrono::system_clock::now();
 C_eigen.noalias() += (A_eigen*(int)alpha)*(B_eigen*(int)beta);
-
+auto eingen_end = std::chrono::system_clock::now();
 std::cout << "EIGEN" << std::endl;
-std::cout << C_eigen << std::endl << std::endl << "MKL";
+std::cout << C_eigen << std::endl << std::endl << "MKL" << std::endl;
                                         
 int8_t oa = 0;
 int8_t ob = 0;
@@ -269,13 +278,93 @@ auto status_args = check_gemm_x8x8x32_input(&offsetc,
         &transA, &transB, &M, &N, &K, &lda, &ldb, &ldc,
         &alpha, &beta, false);
 printMKLdnnStatus(status_args);
+auto mkl_start = std::chrono::system_clock::now();
 auto status = mkldnn_gemm_s8s8s32(&transA, &transB, &offsetc,
         &M, &N, &K, &alpha, A.data(), &lda, &oa, B.data(), &ldb, &ob,
         &beta, C.data(), &ldc, oc.data());
+auto mkl_end = std::chrono::system_clock::now();
 printMKLdnnStatus(status);
 
 Eigen::Matrix<int32_t, M,N> C_MKL = Eigen::Map<Eigen::Matrix<int32_t, M, N, Eigen::ColMajor>>(C.data());
 std::cout << C_MKL << std::endl;
+std::chrono::duration<double> eigen_duration = eingen_end-eigen_start;
+std::chrono::duration<double> mkl_duration = mkl_end-mkl_start;
+
+std::cout << std::fixed;
+std::cout.precision(10);
+std::cout << "Eigen took: " << eigen_duration.count()
+              << " seconds. MKL took: " << mkl_duration.count() << " seconds." << std::endl;
+
+std::cout << "Kenneth Matrix" << std::endl;
+alignas(64) std::array<int8_t, M*K> A_prepared;
+alignas(64) std::array<int8_t, N*K> B_prepared;
+float quant_mult = 1;
+
+//intgemm::Int8::PrepareA(A_kenn.data(), A_prepared.data(), quant_mult, M, K);
+//intgemm::Int8::PrepareB(B_kenn.data(), B_prepared.data(), quant_mult, K, N);
+
+//hmmm
+} //Scope
+
+std::chrono::duration<double> eigen_duration_loop = std::chrono::duration<double>::zero();
+std::chrono::duration<double> mkl_duration_loop = std::chrono::duration<double>::zero();
+
+for (int i = 0; i<1000; i++) {
+	const int align = 64;
+
+	char offsetc = 'F';
+	bool zero_oa = 1;
+	bool zero_ob = 1;
+	bool zero_oc = 0;
+	char transA = 'N';
+	char transB = 'n';
+	const int M = 300;
+	const int N = 200;
+	const int K = 100;
+	float alpha = 2;
+	float beta = 1;
+	int lda = M;
+	int ldb = K;
+	int ldc = M;
+	int8_t oa = 0;
+	int8_t ob = 0;
+	std::array<int32_t, 1> oc = {0};
+
+	alignas(align) Eigen::Matrix<int8_t, Eigen::Dynamic,Eigen::Dynamic> A = Eigen::Matrix<int8_t, Eigen::Dynamic,Eigen::Dynamic>::Random(M,K);
+	alignas(align) Eigen::Matrix<int8_t, Eigen::Dynamic,Eigen::Dynamic> B = Eigen::Matrix<int8_t, Eigen::Dynamic,Eigen::Dynamic>::Random(K,N);
+	alignas(align) Eigen::Matrix<int32_t, Eigen::Dynamic,Eigen::Dynamic> C = Eigen::Matrix<int32_t, Eigen::Dynamic,Eigen::Dynamic>::Random(M,N);
+
+	alignas(align) Eigen::Matrix<int32_t, Eigen::Dynamic,Eigen::Dynamic> eigen_C = C;
+	alignas(align) Eigen::Matrix<int32_t, Eigen::Dynamic,Eigen::Dynamic> eigen_A = A.cast<int32_t>();
+	alignas(align) Eigen::Matrix<int32_t, Eigen::Dynamic,Eigen::Dynamic> eigen_B = B.cast<int32_t>();
+
+	auto eigen_start = std::chrono::system_clock::now();
+	eigen_C.noalias() += (eigen_A*(int)alpha)*(eigen_B*(int)beta);
+	auto eingen_end = std::chrono::system_clock::now();
+	eigen_duration_loop += (eingen_end - eigen_start);
+
+	auto mkl_start = std::chrono::system_clock::now();
+	auto status = mkldnn_gemm_s8s8s32(&transA, &transB, &offsetc,
+        &M, &N, &K, &alpha, A.data(), &lda, &oa, B.data(), &ldb, &ob,
+        &beta, C.data(), &ldc, oc.data());
+	auto mkl_end = std::chrono::system_clock::now();
+
+	mkl_duration_loop += (mkl_end - mkl_start);
+	if (status != mkldnn_success) {
+		std::cout << "we died at " << i << std::endl;
+		break;
+	}
+
+	if (!eigen_C.isApprox(C)){
+		std::cout << "WRONG RESULT at " << i << std::endl;
+		break;
+	}
+
+}
+	std::cout << "In loop, Eigen took: " << eigen_duration_loop.count()
+              << " seconds. MKL took: " << mkl_duration_loop.count() << " seconds." << std::endl;
+
+	std::cout << "Kenneth Matrix" << std::endl;
 
 
 
