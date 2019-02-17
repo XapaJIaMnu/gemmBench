@@ -4,6 +4,7 @@
 #include <mkldnn.h>
 #include <chrono>
 #include "intgemm.h"
+#include "aligned.h"
 
 /*
 template <typename data_t>
@@ -107,7 +108,7 @@ void printMKLdnnStatus(mkldnn_status_t& status) {
 }
 
 int main(int argc, char const *argv[]) {
-    /* code */
+    /* old sanity checks
     alignas(64) const std::array<int8_t, 12> a = {1,2,3,4,
                                 5,6,7,8,
                                 9,10,11,12};
@@ -149,223 +150,246 @@ int main(int argc, char const *argv[]) {
     std::cout << c_eigen << std::endl;
 
     //MKLGEMM
-{
-//New Matrix:
-//New Matrix:
-char offsetc = 'F';
-bool zero_oa = 1;
-bool zero_ob = 1;
-bool zero_oc = 0;
-char transA = 'N';
-char transB = 'n';
-const int M = 30;
-const int N = 20;
-const int K = 10;
-float alpha = 2;
-float beta = 1;
-int lda = M;
-int ldb = K;
-int ldc = M;
-bool expect_to_fail = 0;
+	{
+		//New Matrix:
+		//New Matrix:
+		char offsetc = 'F';
+		bool zero_oa = 1;
+		bool zero_ob = 1;
+		bool zero_oc = 0;
+		char transA = 'N';
+		char transB = 'n';
+		const int M = 30;
+		const int N = 20;
+		const int K = 10;
+		float alpha = 2;
+		float beta = 1;
+		int lda = M;
+		int ldb = K;
+		int ldc = M;
+		bool expect_to_fail = 0;
 
-//Those are likely COL_MAJOR
-alignas(64) std::array<int8_t, M*K> A = {-10,-2,-10,8,3,-4,-6,6,10,3,
-                                        2,-8,6,0,1,7,-5,5,-2,-10,
-                                        6,6,9,1,0,6,-6,7,6,10,
-                                        9,6,-5,2,8,-3,3,-3,1,2,
-                                        4,2,-7,6,6,-10,-6,7,10,-1,
-                                        -10,-5,-3,-7,-8,-8,10,-8,-1,8,
-                                        3,-4,-5,-9,10,-8,-5,1,5,-5,
-                                        -6,0,-5,-2,-7,6,0,4,-5,6,
-                                        -7,-2,9,8,7,7,3,-1,-8,6,
-                                        -6,-8,-2,4,-8,-8,-7,1,7,8,
-                                        8,-6,2,-8,-4,9,8,7,8,6,
-                                        3,3,7,3,-7,-9,-8,3,10,-10,
-                                        -6,1,8,7,2,3,-6,9,3,3,
-                                        4,0,-6,0,-9,10,-6,10,-3,-7,
-                                        -5,4,6,7,9,-7,-3,-2,-3,6,
-                                        -8,-4,2,5,-9,8,-10,5,-7,-10,
-                                        0,7,8,-9,-5,8,1,-5,-6,3,
-                                        6,-4,7,4,-4,5,-1,0,4,3,
-                                        3,4,4,-4,2,-8,5,-4,2,-10,
-                                        7,-7,-8,2,-4,9,9,-2,1,-2,
-                                        -10,-5,10,2,5,1,1,-7,9,8,
-                                        5,-1,5,-8,1,2,7,3,2,5,
-                                        -8,-4,-7,-7,6,2,7,1,-9,6,
-                                        1,-7,-7,-6,-10,-8,-10,2,-9,2,
-                                        5,7,0,-3,10,-1,8,6,7,10,
-                                        10,-8,4,5,3,9,7,-5,2,-7,
-                                        -8,-5,-8,2,9,7,-8,-5,6,1,
-                                        5,1,-4,-6,3,3,-10,-7,9,-7,
-                                        9,-1,6,5,-2,-9,7,2,0,5,
-                                        7,3,8,-1,-2,0,2,9,-7,-7};
-                                        
+		//Those are likely COL_MAJOR
+		alignas(64) std::array<int8_t, M*K> A = {-10,-2,-10,8,3,-4,-6,6,10,3,
+		                                        2,-8,6,0,1,7,-5,5,-2,-10,
+		                                        6,6,9,1,0,6,-6,7,6,10,
+		                                        9,6,-5,2,8,-3,3,-3,1,2,
+		                                        4,2,-7,6,6,-10,-6,7,10,-1,
+		                                        -10,-5,-3,-7,-8,-8,10,-8,-1,8,
+		                                        3,-4,-5,-9,10,-8,-5,1,5,-5,
+		                                        -6,0,-5,-2,-7,6,0,4,-5,6,
+		                                        -7,-2,9,8,7,7,3,-1,-8,6,
+		                                        -6,-8,-2,4,-8,-8,-7,1,7,8,
+		                                        8,-6,2,-8,-4,9,8,7,8,6,
+		                                        3,3,7,3,-7,-9,-8,3,10,-10,
+		                                        -6,1,8,7,2,3,-6,9,3,3,
+		                                        4,0,-6,0,-9,10,-6,10,-3,-7,
+		                                        -5,4,6,7,9,-7,-3,-2,-3,6,
+		                                        -8,-4,2,5,-9,8,-10,5,-7,-10,
+		                                        0,7,8,-9,-5,8,1,-5,-6,3,
+		                                        6,-4,7,4,-4,5,-1,0,4,3,
+		                                        3,4,4,-4,2,-8,5,-4,2,-10,
+		                                        7,-7,-8,2,-4,9,9,-2,1,-2,
+		                                        -10,-5,10,2,5,1,1,-7,9,8,
+		                                        5,-1,5,-8,1,2,7,3,2,5,
+		                                        -8,-4,-7,-7,6,2,7,1,-9,6,
+		                                        1,-7,-7,-6,-10,-8,-10,2,-9,2,
+		                                        5,7,0,-3,10,-1,8,6,7,10,
+		                                        10,-8,4,5,3,9,7,-5,2,-7,
+		                                        -8,-5,-8,2,9,7,-8,-5,6,1,
+		                                        5,1,-4,-6,3,3,-10,-7,9,-7,
+		                                        9,-1,6,5,-2,-9,7,2,0,5,
+		                                        7,3,8,-1,-2,0,2,9,-7,-7};
+		                                        
 
-alignas(64) std::array<int8_t, N*K> B = {-2,6,-7,10,9,5,4,7,-8,10,
-                                        -5,-4,8,-9,0,2,-4,7,2,1,
-                                        7,-9,8,-10,-3,-2,7,7,-6,-5,
-                                        -2,10,3,-2,-9,10,-2,2,4,-7,
-                                        -6,4,9,-7,-7,8,7,-2,-3,-5,
-                                        -8,-8,7,-5,10,2,2,2,-8,10,
-                                        0,9,-5,-1,-4,-6,9,-9,-10,-9,
-                                        -10,-2,10,-3,-8,4,-7,4,-1,8,
-                                        -6,9,4,3,0,2,2,5,4,-9,
-                                        5,9,3,-3,9,4,6,2,3,5,
-                                        9,10,-8,4,-8,-2,7,1,-2,-5,
-                                        3,-9,9,-7,-8,4,8,-10,-7,7,
-                                        -2,7,-6,-3,6,-8,-10,5,-1,1,
-                                        -1,-9,-1,8,8,-10,1,-3,5,-10,
-                                        -10,6,10,-3,0,4,-4,5,4,9,
-                                        -3,1,-8,7,4,-3,5,1,6,-2,
-                                        3,6,-5,-4,-10,-6,-7,-3,4,-6,
-                                        8,8,-5,-2,3,0,3,7,-7,-8,
-                                        -10,4,6,8,3,8,-6,3,10,-2,
-                                        9,-6,7,5,10,5,-5,-1,-8,1};
-                                        
+		alignas(64) std::array<int8_t, N*K> B = {-2,6,-7,10,9,5,4,7,-8,10,
+		                                        -5,-4,8,-9,0,2,-4,7,2,1,
+		                                        7,-9,8,-10,-3,-2,7,7,-6,-5,
+		                                        -2,10,3,-2,-9,10,-2,2,4,-7,
+		                                        -6,4,9,-7,-7,8,7,-2,-3,-5,
+		                                        -8,-8,7,-5,10,2,2,2,-8,10,
+		                                        0,9,-5,-1,-4,-6,9,-9,-10,-9,
+		                                        -10,-2,10,-3,-8,4,-7,4,-1,8,
+		                                        -6,9,4,3,0,2,2,5,4,-9,
+		                                        5,9,3,-3,9,4,6,2,3,5,
+		                                        9,10,-8,4,-8,-2,7,1,-2,-5,
+		                                        3,-9,9,-7,-8,4,8,-10,-7,7,
+		                                        -2,7,-6,-3,6,-8,-10,5,-1,1,
+		                                        -1,-9,-1,8,8,-10,1,-3,5,-10,
+		                                        -10,6,10,-3,0,4,-4,5,4,9,
+		                                        -3,1,-8,7,4,-3,5,1,6,-2,
+		                                        3,6,-5,-4,-10,-6,-7,-3,4,-6,
+		                                        8,8,-5,-2,3,0,3,7,-7,-8,
+		                                        -10,4,6,8,3,8,-6,3,10,-2,
+		                                        9,-6,7,5,10,5,-5,-1,-8,1};
+		                                        
 
-alignas(64) std::array<int32_t, M*N> C = {-7,1,-8,-8,-5,0,3,-7,-2,-7,7,-5,8,5,2,-3,6,8,9,-6,
-                                        8,7,-3,-4,-8,8,10,10,6,-7,8,0,0,4,-10,-3,-2,-6,9,4,
-                                        -4,8,-8,4,-8,2,-2,3,-4,3,-4,10,-7,5,-7,-4,0,-8,-7,-4,
-                                        -5,9,4,4,2,5,-10,9,9,8,2,-6,5,2,7,-7,0,-7,7,-6,
-                                        1,0,3,4,-6,4,-3,8,-9,-5,6,8,5,5,-9,-3,-10,5,-1,5,
-                                        -2,6,5,-8,5,-9,3,-1,0,9,-3,-1,5,5,8,-7,-1,-2,-5,0,
-                                        1,6,1,-1,-2,6,-2,2,-6,-9,-10,8,8,-1,0,-5,-4,-6,6,6,
-                                        0,6,4,6,-8,8,10,-9,-1,4,-9,7,-6,9,-6,-3,8,-7,-1,3,
-                                        -3,-7,-6,2,-5,5,10,-1,4,-8,3,-2,-2,6,-1,-3,4,6,-2,8,
-                                        -5,9,4,2,-9,-4,8,1,-10,1,-2,-8,-4,6,8,0,2,2,-9,3,
-                                        -7,1,8,-3,2,9,9,-8,-4,6,-1,3,-9,-7,-6,-3,0,0,-2,-10,
-                                        7,4,-9,-6,3,-3,-10,-5,-4,7,9,6,-6,7,-9,3,-10,4,-1,10,
-                                        2,-10,4,4,9,0,-8,-7,3,-7,2,-7,9,5,-4,-6,-8,-8,5,6,
-                                        3,10,8,5,1,-6,-9,-1,8,-7,6,10,2,6,-8,-6,-5,10,8,0,
-                                        9,6,-7,-6,1,-5,5,-9,4,-10,1,2,8,5,4,-1,4,-7,6,-7,
-                                        -2,-10,5,-8,7,-10,7,-1,10,-9,-8,10,-2,5,-10,-3,4,-6,6,-1,
-                                        -2,1,1,-7,-6,0,4,3,3,-8,-2,-7,7,10,-4,6,-10,2,6,-9,
-                                        -9,6,5,5,-7,-2,6,10,-9,-3,-10,6,-6,-4,1,-5,8,-6,-6,8,
-                                        10,9,2,-10,10,8,1,-3,10,6,-10,8,-5,3,-3,-4,-7,-8,-7,-8,
-                                        -3,-7,6,2,-2,-4,7,-5,0,-10,-8,-3,10,2,-2,7,0,9,-9,-3,
-                                        2,6,3,7,3,7,-4,8,-8,-5,-3,-2,-4,0,-5,9,-3,2,-10,-4,
-                                        -6,1,-6,6,-3,0,3,1,9,10,7,-8,-3,10,-9,4,0,1,-10,-5,
-                                        1,-7,6,-7,-1,3,-1,3,10,3,-7,-9,-4,1,7,7,-8,-7,3,-2,
-                                        8,-2,0,8,-5,3,1,-8,9,-8,7,-8,-1,-4,-3,-5,-5,-8,-2,5,
-                                        4,-8,-1,5,-2,9,3,2,6,8,-1,-4,-6,8,3,-5,-10,1,1,-1,
-                                        8,0,10,1,-5,6,-3,5,-5,10,7,0,9,-10,2,-1,0,-5,-7,-1,
-                                        -3,-1,0,-6,-2,0,8,3,9,5,0,-3,-4,0,9,-6,1,-9,6,2,
-                                        10,2,-1,10,-7,1,1,-3,4,3,7,-4,7,6,9,4,2,-5,-4,-1,
-                                        6,1,10,-6,7,0,-4,6,10,-9,-9,0,-9,-3,-2,2,-8,-5,4,-9,
-                                        3,8,7,-8,3,-5,3,-5,10,-5,-8,-10,2,-3,7,-9,1,-6,6,-10};
+		alignas(64) std::array<int32_t, M*N> C = {-7,1,-8,-8,-5,0,3,-7,-2,-7,7,-5,8,5,2,-3,6,8,9,-6,
+		                                        8,7,-3,-4,-8,8,10,10,6,-7,8,0,0,4,-10,-3,-2,-6,9,4,
+		                                        -4,8,-8,4,-8,2,-2,3,-4,3,-4,10,-7,5,-7,-4,0,-8,-7,-4,
+		                                        -5,9,4,4,2,5,-10,9,9,8,2,-6,5,2,7,-7,0,-7,7,-6,
+		                                        1,0,3,4,-6,4,-3,8,-9,-5,6,8,5,5,-9,-3,-10,5,-1,5,
+		                                        -2,6,5,-8,5,-9,3,-1,0,9,-3,-1,5,5,8,-7,-1,-2,-5,0,
+		                                        1,6,1,-1,-2,6,-2,2,-6,-9,-10,8,8,-1,0,-5,-4,-6,6,6,
+		                                        0,6,4,6,-8,8,10,-9,-1,4,-9,7,-6,9,-6,-3,8,-7,-1,3,
+		                                        -3,-7,-6,2,-5,5,10,-1,4,-8,3,-2,-2,6,-1,-3,4,6,-2,8,
+		                                        -5,9,4,2,-9,-4,8,1,-10,1,-2,-8,-4,6,8,0,2,2,-9,3,
+		                                        -7,1,8,-3,2,9,9,-8,-4,6,-1,3,-9,-7,-6,-3,0,0,-2,-10,
+		                                        7,4,-9,-6,3,-3,-10,-5,-4,7,9,6,-6,7,-9,3,-10,4,-1,10,
+		                                        2,-10,4,4,9,0,-8,-7,3,-7,2,-7,9,5,-4,-6,-8,-8,5,6,
+		                                        3,10,8,5,1,-6,-9,-1,8,-7,6,10,2,6,-8,-6,-5,10,8,0,
+		                                        9,6,-7,-6,1,-5,5,-9,4,-10,1,2,8,5,4,-1,4,-7,6,-7,
+		                                        -2,-10,5,-8,7,-10,7,-1,10,-9,-8,10,-2,5,-10,-3,4,-6,6,-1,
+		                                        -2,1,1,-7,-6,0,4,3,3,-8,-2,-7,7,10,-4,6,-10,2,6,-9,
+		                                        -9,6,5,5,-7,-2,6,10,-9,-3,-10,6,-6,-4,1,-5,8,-6,-6,8,
+		                                        10,9,2,-10,10,8,1,-3,10,6,-10,8,-5,3,-3,-4,-7,-8,-7,-8,
+		                                        -3,-7,6,2,-2,-4,7,-5,0,-10,-8,-3,10,2,-2,7,0,9,-9,-3,
+		                                        2,6,3,7,3,7,-4,8,-8,-5,-3,-2,-4,0,-5,9,-3,2,-10,-4,
+		                                        -6,1,-6,6,-3,0,3,1,9,10,7,-8,-3,10,-9,4,0,1,-10,-5,
+		                                        1,-7,6,-7,-1,3,-1,3,10,3,-7,-9,-4,1,7,7,-8,-7,3,-2,
+		                                        8,-2,0,8,-5,3,1,-8,9,-8,7,-8,-1,-4,-3,-5,-5,-8,-2,5,
+		                                        4,-8,-1,5,-2,9,3,2,6,8,-1,-4,-6,8,3,-5,-10,1,1,-1,
+		                                        8,0,10,1,-5,6,-3,5,-5,10,7,0,9,-10,2,-1,0,-5,-7,-1,
+		                                        -3,-1,0,-6,-2,0,8,3,9,5,0,-3,-4,0,9,-6,1,-9,6,2,
+		                                        10,2,-1,10,-7,1,1,-3,4,3,7,-4,7,6,9,4,2,-5,-4,-1,
+		                                        6,1,10,-6,7,0,-4,6,10,-9,-9,0,-9,-3,-2,2,-8,-5,4,-9,
+		                                        3,8,7,-8,3,-5,3,-5,10,-5,-8,-10,2,-3,7,-9,1,-6,6,-10};
 
-//Eigen sanity check matrices
-alignas(64) Eigen::Matrix<int32_t, M,K> A_eigen = Eigen::Map<const Eigen::Matrix<int8_t, M, K, Eigen::ColMajor>>(A.data()).cast<int32_t>();
-alignas(64) Eigen::Matrix<int32_t, K,N> B_eigen = Eigen::Map<const Eigen::Matrix<int8_t, K, N, Eigen::ColMajor>>(B.data()).cast<int32_t>();
-alignas(64) Eigen::Matrix<int32_t, M,N> C_eigen = Eigen::Map<Eigen::Matrix<int32_t, M, N, Eigen::ColMajor>>(C.data());
+		//Eigen sanity check matrices
+		alignas(64) Eigen::Matrix<int32_t, M,K> A_eigen = Eigen::Map<const Eigen::Matrix<int8_t, M, K, Eigen::ColMajor>>(A.data()).cast<int32_t>();
+		alignas(64) Eigen::Matrix<int32_t, K,N> B_eigen = Eigen::Map<const Eigen::Matrix<int8_t, K, N, Eigen::ColMajor>>(B.data()).cast<int32_t>();
+		alignas(64) Eigen::Matrix<int32_t, M,N> C_eigen = Eigen::Map<Eigen::Matrix<int32_t, M, N, Eigen::ColMajor>>(C.data());
 
-//Kenneth's matrices
-Eigen::Matrix<int8_t, M,K, Eigen::RowMajor> A_kenn = Eigen::Map<const Eigen::Matrix<int8_t, M, K, Eigen::ColMajor>>(A.data());
-Eigen::Matrix<int8_t, K,N, Eigen::RowMajor> B_kenn = Eigen::Map<const Eigen::Matrix<int8_t, K, N, Eigen::ColMajor>>(B.data());
-Eigen::Matrix<int32_t, M,N, Eigen::RowMajor> C_kenn = Eigen::Map<const Eigen::Matrix<int32_t, M, N, Eigen::ColMajor>>(C.data());
+		//Kenneth's matrices
+		Eigen::Matrix<int8_t, M,K, Eigen::RowMajor> A_kenn = Eigen::Map<const Eigen::Matrix<int8_t, M, K, Eigen::ColMajor>>(A.data());
+		Eigen::Matrix<int8_t, K,N, Eigen::RowMajor> B_kenn = Eigen::Map<const Eigen::Matrix<int8_t, K, N, Eigen::ColMajor>>(B.data());
+		Eigen::Matrix<int32_t, M,N, Eigen::RowMajor> C_kenn = Eigen::Map<const Eigen::Matrix<int32_t, M, N, Eigen::ColMajor>>(C.data());
 
-auto eigen_start = std::chrono::system_clock::now();
-C_eigen.noalias() += (A_eigen*(int)alpha)*(B_eigen*(int)beta);
-auto eingen_end = std::chrono::system_clock::now();
-std::cout << "EIGEN" << std::endl;
-std::cout << C_eigen << std::endl << std::endl << "MKL" << std::endl;
-                                        
-int8_t oa = 0;
-int8_t ob = 0;
-std::array<int32_t, 1> oc = {0};
+		auto eigen_start = std::chrono::system_clock::now();
+		C_eigen.noalias() += (A_eigen*(int)alpha)*(B_eigen*(int)beta);
+		auto eingen_end = std::chrono::system_clock::now();
+		std::cout << "EIGEN" << std::endl;
+		std::cout << C_eigen << std::endl << std::endl << "MKL" << std::endl;
+		                                        
+		int8_t oa = 0;
+		int8_t ob = 0;
+		std::array<int32_t, 1> oc = {0};
 
-auto status_args = check_gemm_x8x8x32_input(&offsetc,
-        &transA, &transB, &M, &N, &K, &lda, &ldb, &ldc,
-        &alpha, &beta, false);
-printMKLdnnStatus(status_args);
-auto mkl_start = std::chrono::system_clock::now();
-auto status = mkldnn_gemm_s8s8s32(&transA, &transB, &offsetc,
-        &M, &N, &K, &alpha, A.data(), &lda, &oa, B.data(), &ldb, &ob,
-        &beta, C.data(), &ldc, oc.data());
-auto mkl_end = std::chrono::system_clock::now();
-printMKLdnnStatus(status);
+		auto status_args = check_gemm_x8x8x32_input(&offsetc,
+		        &transA, &transB, &M, &N, &K, &lda, &ldb, &ldc,
+		        &alpha, &beta, false);
+		printMKLdnnStatus(status_args);
+		auto mkl_start = std::chrono::system_clock::now();
+		auto status = mkldnn_gemm_s8s8s32(&transA, &transB, &offsetc,
+		        &M, &N, &K, &alpha, A.data(), &lda, &oa, B.data(), &ldb, &ob,
+		        &beta, C.data(), &ldc, oc.data());
+		auto mkl_end = std::chrono::system_clock::now();
+		printMKLdnnStatus(status);
 
-Eigen::Matrix<int32_t, M,N> C_MKL = Eigen::Map<Eigen::Matrix<int32_t, M, N, Eigen::ColMajor>>(C.data());
-std::cout << C_MKL << std::endl;
-std::chrono::duration<double> eigen_duration = eingen_end-eigen_start;
-std::chrono::duration<double> mkl_duration = mkl_end-mkl_start;
+		Eigen::Matrix<int32_t, M,N> C_MKL = Eigen::Map<Eigen::Matrix<int32_t, M, N, Eigen::ColMajor>>(C.data());
+		std::cout << C_MKL << std::endl;
+		std::chrono::duration<double> eigen_duration = eingen_end-eigen_start;
+		std::chrono::duration<double> mkl_duration = mkl_end-mkl_start;
 
-std::cout << std::fixed;
-std::cout.precision(10);
-std::cout << "Eigen took: " << eigen_duration.count()
-              << " seconds. MKL took: " << mkl_duration.count() << " seconds." << std::endl;
+		std::cout << std::fixed;
+		std::cout.precision(10);
+		std::cout << "Eigen took: " << eigen_duration.count()
+		              << " seconds. MKL took: " << mkl_duration.count() << " seconds." << std::endl;
 
-std::cout << "Kenneth Matrix" << std::endl;
-alignas(64) std::array<int8_t, M*K> A_prepared;
-alignas(64) std::array<int8_t, N*K> B_prepared;
-float quant_mult = 1;
+		//intgemm::Int8::PrepareA(A_kenn.data(), A_prepared.data(), quant_mult, M, K);
+		//intgemm::Int8::PrepareB(B_kenn.data(), B_prepared.data(), quant_mult, K, N);
 
-//intgemm::Int8::PrepareA(A_kenn.data(), A_prepared.data(), quant_mult, M, K);
-//intgemm::Int8::PrepareB(B_kenn.data(), B_prepared.data(), quant_mult, K, N);
+		//hmmm
+	} //Scope */
 
-//hmmm
-} //Scope
+	std::chrono::duration<double> eigen_duration_loop = std::chrono::duration<double>::zero();
+	std::chrono::duration<double> mkl_duration_loop = std::chrono::duration<double>::zero();
+	const size_t align = 64;
 
-std::chrono::duration<double> eigen_duration_loop = std::chrono::duration<double>::zero();
-std::chrono::duration<double> mkl_duration_loop = std::chrono::duration<double>::zero();
+	for (int i = 0; i<1000; i++) {
 
-for (int i = 0; i<1000; i++) {
-	const int align = 64;
+		char offsetc = 'F';
+		bool zero_oa = 1;
+		bool zero_ob = 1;
+		bool zero_oc = 0;
+		char transA = 'N';
+		char transB = 'n';
+		const int M = 300;
+		const int N = 200;
+		const int K = 100;
+		float alpha = 2;
+		float beta = 1;
+		int lda = M;
+		int ldb = K;
+		int ldc = M;
+		int8_t oa = 0;
+		int8_t ob = 0;
+		std::array<int32_t, 1> oc = {0};
 
-	char offsetc = 'F';
-	bool zero_oa = 1;
-	bool zero_ob = 1;
-	bool zero_oc = 0;
-	char transA = 'N';
-	char transB = 'n';
-	const int M = 300;
-	const int N = 200;
-	const int K = 100;
-	float alpha = 2;
-	float beta = 1;
-	int lda = M;
-	int ldb = K;
-	int ldc = M;
-	int8_t oa = 0;
-	int8_t ob = 0;
-	std::array<int32_t, 1> oc = {0};
+		//Construct matrices
 
-	alignas(align) Eigen::Matrix<int8_t, Eigen::Dynamic,Eigen::Dynamic> A = Eigen::Matrix<int8_t, Eigen::Dynamic,Eigen::Dynamic>::Random(M,K);
-	alignas(align) Eigen::Matrix<int8_t, Eigen::Dynamic,Eigen::Dynamic> B = Eigen::Matrix<int8_t, Eigen::Dynamic,Eigen::Dynamic>::Random(K,N);
-	alignas(align) Eigen::Matrix<int32_t, Eigen::Dynamic,Eigen::Dynamic> C = Eigen::Matrix<int32_t, Eigen::Dynamic,Eigen::Dynamic>::Random(M,N);
+		Eigen::Matrix<int8_t, Eigen::Dynamic,Eigen::Dynamic> A = Eigen::Matrix<int8_t, Eigen::Dynamic,Eigen::Dynamic>::Random(M,K);
+		Eigen::Matrix<int8_t, Eigen::Dynamic,Eigen::Dynamic> B = Eigen::Matrix<int8_t, Eigen::Dynamic,Eigen::Dynamic>::Random(K,N);
+		Eigen::Matrix<int32_t, Eigen::Dynamic,Eigen::Dynamic> C = Eigen::Matrix<int32_t, Eigen::Dynamic,Eigen::Dynamic>::Random(M,N);
 
-	alignas(align) Eigen::Matrix<int32_t, Eigen::Dynamic,Eigen::Dynamic> eigen_C = C;
-	alignas(align) Eigen::Matrix<int32_t, Eigen::Dynamic,Eigen::Dynamic> eigen_A = A.cast<int32_t>();
-	alignas(align) Eigen::Matrix<int32_t, Eigen::Dynamic,Eigen::Dynamic> eigen_B = B.cast<int32_t>();
+		Eigen::Matrix<int32_t, Eigen::Dynamic,Eigen::Dynamic> eigen_A_tmp = A.cast<int32_t>();
+		Eigen::Matrix<int32_t, Eigen::Dynamic,Eigen::Dynamic> eigen_B_tmp = B.cast<int32_t>();
+		
+		// Copy onto aligned memory
+		alloc::AlignedVector<int8_t, align> A_MKL(M*K);
+		alloc::AlignedVector<int8_t, align> B_MKL(K*N);
+		alloc::AlignedVector<int32_t, align> C_MKL(M*N);
 
-	auto eigen_start = std::chrono::system_clock::now();
-	eigen_C.noalias() += (eigen_A*(int)alpha)*(eigen_B*(int)beta);
-	auto eingen_end = std::chrono::system_clock::now();
-	eigen_duration_loop += (eingen_end - eigen_start);
+		alloc::AlignedVector<int32_t, align> A_EIGEN(M*K);
+		alloc::AlignedVector<int32_t, align> B_EIGEN(K*N);
+		alloc::AlignedVector<int32_t, align> C_EIGEN(M*N);
 
-	auto mkl_start = std::chrono::system_clock::now();
-	auto status = mkldnn_gemm_s8s8s32(&transA, &transB, &offsetc,
-        &M, &N, &K, &alpha, A.data(), &lda, &oa, B.data(), &ldb, &ob,
-        &beta, C.data(), &ldc, oc.data());
-	auto mkl_end = std::chrono::system_clock::now();
+		//MKL
+		std::copy(A.data(), A.data() + A.size(), A_MKL.get());
+		std::copy(B.data(), B.data() + B.size(), B_MKL.get());
+		std::copy(C.data(), C.data() + C.size(), C_MKL.get());
 
-	mkl_duration_loop += (mkl_end - mkl_start);
-	if (status != mkldnn_success) {
-		std::cout << "we died at " << i << std::endl;
-		break;
+		//EIGEN
+		std::copy(eigen_A_tmp.data(), eigen_A_tmp.data() + eigen_A_tmp.size(), A_EIGEN.get());
+		std::copy(eigen_B_tmp.data(), eigen_B_tmp.data() + eigen_B_tmp.size(), B_EIGEN.get());
+		std::copy(C.data(), C.data() + C.size(), C_EIGEN.get());
+
+		Eigen::Map<Eigen::Matrix<int32_t, M, K, Eigen::ColMajor> > eigen_a(A_EIGEN.get());
+		Eigen::Map<Eigen::Matrix<int32_t, K, N, Eigen::ColMajor> > eigen_b(B_EIGEN.get());
+		Eigen::Map<Eigen::Matrix<int32_t, M, N, Eigen::ColMajor> > eigen_c(C_EIGEN.get());
+
+		//Sanity check
+		Eigen::Map<Eigen::Matrix<int32_t, M, N, Eigen::ColMajor> > mkl_c_check(C_MKL.get());
+
+
+
+		auto eigen_start = std::chrono::system_clock::now();
+		eigen_c.noalias() += (eigen_a*(int)alpha)*(eigen_b*(int)beta);
+		auto eingen_end = std::chrono::system_clock::now();
+		eigen_duration_loop += (eingen_end - eigen_start);
+
+		auto mkl_start = std::chrono::system_clock::now();
+		auto status = mkldnn_gemm_s8s8s32(&transA, &transB, &offsetc,
+	        &M, &N, &K, &alpha, A_MKL.get(), &lda, &oa, B_MKL.get(), &ldb, &ob,
+	        &beta, C_MKL.get(), &ldc, oc.data());
+		auto mkl_end = std::chrono::system_clock::now();
+
+		mkl_duration_loop += (mkl_end - mkl_start);
+		if (status != mkldnn_success) {
+			std::cout << "we died at " << i << std::endl;
+			break;
+		}
+
+		if (!eigen_c.isApprox(mkl_c_check)){
+			std::cout << "WRONG RESULT at " << i << std::endl;
+			break;
+		}
+
 	}
-
-	if (!eigen_C.isApprox(C)){
-		std::cout << "WRONG RESULT at " << i << std::endl;
-		break;
-	}
-
-}
+	std::cout << std::fixed;
+	std::cout.precision(10);
 	std::cout << "In loop, Eigen took: " << eigen_duration_loop.count()
-              << " seconds. MKL took: " << mkl_duration_loop.count() << " seconds." << std::endl;
-
-	std::cout << "Kenneth Matrix" << std::endl;
-
+              << " seconds. MKL took: " << mkl_duration_loop.count() << " seconds. Alignment was: " << align << std::endl;
 
 
     return 0;
