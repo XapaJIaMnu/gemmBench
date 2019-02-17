@@ -304,6 +304,7 @@ int main(int argc, char const *argv[]) {
 
 	std::chrono::duration<double> eigen_duration_loop = std::chrono::duration<double>::zero();
 	std::chrono::duration<double> mkl_duration_loop = std::chrono::duration<double>::zero();
+	std::chrono::duration<double> kenn_duration_loop = std::chrono::duration<double>::zero();
 	const size_t align = 64;
 
 	for (int i = 0; i<1000; i++) {
@@ -314,10 +315,10 @@ int main(int argc, char const *argv[]) {
 		bool zero_oc = 0;
 		char transA = 'N';
 		char transB = 'n';
-		const int M = 300;
-		const int N = 200;
-		const int K = 100;
-		float alpha = 2;
+		const int M = 320;
+		const int N = 640;
+		const int K = 320;
+		float alpha = 1;//2; Eigen is a buggy
 		float beta = 1;
 		int lda = M;
 		int ldb = K;
@@ -364,7 +365,8 @@ int main(int argc, char const *argv[]) {
 
 
 		auto eigen_start = std::chrono::system_clock::now();
-		eigen_c.noalias() += (eigen_a*(int)alpha)*(eigen_b*(int)beta);
+		//eigen_c.noalias() += (eigen_a*(int)alpha)*(eigen_b*(int)beta);
+		eigen_c.noalias() += eigen_a*eigen_b;
 		auto eingen_end = std::chrono::system_clock::now();
 		eigen_duration_loop += (eingen_end - eigen_start);
 
@@ -385,11 +387,41 @@ int main(int argc, char const *argv[]) {
 			break;
 		}
 
+		//Now for kenneth's Matrices
+		Eigen::Matrix<float, Eigen::Dynamic,Eigen::Dynamic, Eigen::RowMajor> kenneth_a_tmp = A.cast<float>();
+		Eigen::Matrix<float, Eigen::Dynamic,Eigen::Dynamic, Eigen::RowMajor> kenneth_b_tmp = B.cast<float>();
+
+		alloc::AlignedVector<float, align> A_proto(M * K);
+    	alloc::AlignedVector<float, align> B_proto(K * N);
+
+    	std::copy(kenneth_a_tmp.data(), kenneth_a_tmp.data() + kenneth_a_tmp.size(), A_proto.get());
+		std::copy(kenneth_b_tmp.data(), kenneth_b_tmp.data() + kenneth_b_tmp.size(), B_proto.get());
+
+
+		float quant_mult = 127.0 / 2.0; //Ask what's happening
+    	alloc::AlignedVector<int8_t, align> A_prepared(M * K);
+    	alloc::AlignedVector<int8_t, align> B_prepared(K * N);
+
+    	intgemm::Int8::PrepareA(A_proto.get(), A_prepared.get(), quant_mult, M, K);
+    	// Quantize and reshape B.
+    	// Typically you will do this once when parameters are loaded, not every time.
+    	intgemm::Int8::PrepareB(A_proto.get(), B_prepared.get(), quant_mult, K, N);
+
+		alloc::AlignedVector<float, align> C_kenn(M*N);
+
+		auto kenn_start = std::chrono::system_clock::now();
+		intgemm::Int8::Multiply(A_prepared.get(), B_prepared.get(), C_kenn.get(), 1.0 / (quant_mult * quant_mult), M, K, N);
+		auto kenn_end = std::chrono::system_clock::now();
+
+		kenn_duration_loop += (kenn_end - kenn_start);
+
 	}
 	std::cout << std::fixed;
 	std::cout.precision(10);
-	std::cout << "In loop, Eigen took: " << eigen_duration_loop.count()
-              << " seconds. MKL took: " << mkl_duration_loop.count() << " seconds. Alignment was: " << align << std::endl;
+	std::cout << "In loop, Eigen took: " << eigen_duration_loop.count() << " seconds. " << std::endl << 
+	             "           MKL took: " << mkl_duration_loop.count() << " seconds. " << std::endl << 
+	             "Kenneth's work took: " << kenn_duration_loop.count() << std::endl << 
+	             "Alignment was: " << align << "." << std::endl;
 
 
     return 0;
