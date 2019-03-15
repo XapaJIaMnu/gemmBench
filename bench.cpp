@@ -90,7 +90,7 @@ int main(int argc, char const *argv[]) {
 	const size_t align = 64;
     bool kenngemm = true;
 
-	for (int i = 0; i<1000; i++) {
+	for (int i = 0; i<10; i++) {
 
 		char offsetc = 'F';
 		bool zero_oa = 1;
@@ -98,9 +98,9 @@ int main(int argc, char const *argv[]) {
 		bool zero_oc = 0;
 		char transA = 'N';
 		char transB = 'n';
-		const int M = 30;
-		const int N = 20;
-		const int K = 10;
+		const int M = 1024;
+		const int N = 1024;
+		const int K = 1024;
 		float alpha = 1;//2; Eigen is a buggy
 		float beta = 1;
 		int lda = M;
@@ -138,12 +138,12 @@ int main(int argc, char const *argv[]) {
 		std::copy(eigen_B_tmp.data(), eigen_B_tmp.data() + eigen_B_tmp.size(), B_EIGEN.get());
 		std::copy(C.data(), C.data() + C.size(), C_EIGEN.get());
 
-		Eigen::Map<Eigen::Matrix<int32_t, M, K, Eigen::ColMajor> > eigen_a(A_EIGEN.get());
-		Eigen::Map<Eigen::Matrix<int32_t, K, N, Eigen::ColMajor> > eigen_b(B_EIGEN.get());
-		Eigen::Map<Eigen::Matrix<int32_t, M, N, Eigen::ColMajor> > eigen_c(C_EIGEN.get());
+		Eigen::Map<Eigen::Matrix<int32_t, Eigen::Dynamic,Eigen::Dynamic, Eigen::ColMajor> > eigen_a(A_EIGEN.get(), M, K);
+		Eigen::Map<Eigen::Matrix<int32_t, Eigen::Dynamic,Eigen::Dynamic, Eigen::ColMajor> > eigen_b(B_EIGEN.get(), K, N);
+		Eigen::Map<Eigen::Matrix<int32_t, Eigen::Dynamic,Eigen::Dynamic, Eigen::ColMajor> > eigen_c(C_EIGEN.get(), M, N);
 
 		//Sanity check
-		Eigen::Map<Eigen::Matrix<int32_t, M, N, Eigen::ColMajor> > mkl_c_check(C_MKL.get());
+		Eigen::Map<Eigen::Matrix<int32_t, Eigen::Dynamic,Eigen::Dynamic, Eigen::ColMajor> > mkl_c_check(C_MKL.get(), M, N);
 
 
 
