@@ -6,14 +6,6 @@
 #include "intgemm/intgemm.h"
 #include "aligned.h"
 
-
-//OPENCL
-
-
-#define CL_USE_DEPRECATED_OPENCL_1_2_APIS // to disable deprecation warnings
-
-// Includes the CLBlast library (C interface)
-#include <clblast_c.h>
 /*
 template <typename data_t>
 void ref_gemm(const char *transa, const char *transb, int m, int n, int k,
@@ -115,97 +107,6 @@ void printMKLdnnStatus(mkldnn_status_t& status) {
     }
 }
 
-int openCLGemm(size_t m, size_t n, size_t k) {
-	// OpenCL platform/device settings
-	const size_t platform_id = 0;
-	const size_t device_id = 0;
-
-	// Example SGEMM arguments
-	//const size_t m = 128;
-	//const size_t n = 64;
-	//const size_t k = 512;
-	const float alpha = 0.7f;
-	const float beta = 1.0f;
-	const size_t a_ld = k;
-	const size_t b_ld = n;
-	const size_t c_ld = n;
-
-	// Initializes the OpenCL platform
-	static cl_uint num_platforms;
-	static cl_platform_id platform;
-	static cl_device_id* devices;
-	static cl_device_id device;
-	static cl_uint num_devices;
-	static cl_context context;
-	static cl_command_queue queue;
-	static cl_event event;
-	static bool first = true;
-	if (first) {
-		clGetPlatformIDs(0, NULL, &num_platforms);
-		cl_platform_id* platforms = (cl_platform_id*)malloc(num_platforms*sizeof(cl_platform_id));
-		clGetPlatformIDs(num_platforms, platforms, NULL);
-		platform = platforms[platform_id];
-
-		// Initializes the OpenCL device
-		clGetDeviceIDs(platform, CL_DEVICE_TYPE_ALL, 0, NULL, &num_devices);
-		devices = (cl_device_id*)malloc(num_devices*sizeof(cl_device_id));
-		clGetDeviceIDs(platform, CL_DEVICE_TYPE_ALL, num_devices, devices, NULL);
-		device = devices[device_id];
-
-		// Creates the OpenCL context, queue, and an event
-		context = clCreateContext(NULL, 1, &device, NULL, NULL, NULL);
-		queue = clCreateCommandQueue(context, device, 0, NULL); //OpenCL 1.2 support
-		event = NULL;
-		first = false;
-	}
-
-	// Populate host matrices with some example data
-	float* host_a = (float*)malloc(sizeof(float)*m*k);
-	float* host_b = (float*)malloc(sizeof(float)*n*k);
-	float* host_c = (float*)malloc(sizeof(float)*m*n);
-	for (size_t i=0; i<m*k; ++i) { host_a[i] = 12.193f; }
-	for (size_t i=0; i<n*k; ++i) { host_b[i] = -8.199f; }
-	for (size_t i=0; i<m*n; ++i) { host_c[i] = 0.0f; }
-
-	// Copy the matrices to the device
-	cl_mem device_a = clCreateBuffer(context, CL_MEM_READ_WRITE, m*k*sizeof(float), NULL, NULL);
-	cl_mem device_b = clCreateBuffer(context, CL_MEM_READ_WRITE, n*k*sizeof(float), NULL, NULL);
-	cl_mem device_c = clCreateBuffer(context, CL_MEM_READ_WRITE, m*n*sizeof(float), NULL, NULL);
-	clEnqueueWriteBuffer(queue, device_a, CL_TRUE, 0, m*k*sizeof(float), host_a, 0, NULL, NULL);
-	clEnqueueWriteBuffer(queue, device_b, CL_TRUE, 0, n*k*sizeof(float), host_b, 0, NULL, NULL);
-	clEnqueueWriteBuffer(queue, device_c, CL_TRUE, 0, m*n*sizeof(float), host_c, 0, NULL, NULL);
-
-	// Call the SGEMM routine.
-	CLBlastStatusCode status = CLBlastSgemm(CLBlastLayoutRowMajor,
-	                                      CLBlastTransposeNo, CLBlastTransposeNo,
-	                                      m, n, k,
-	                                      alpha,
-	                                      device_a, 0, a_ld,
-	                                      device_b, 0, b_ld,
-	                                      beta,
-	                                      device_c, 0, c_ld,
-	                                      &queue, &event);
-
-	// Wait for completion
-	if (status == CLBlastSuccess) {
-		clWaitForEvents(1, &event);
-		clReleaseEvent(event);
-	}
-
-	// Clean-up
-	//free(platforms);
-	//free(devices);
-	free(host_a);
-	free(host_b);
-	free(host_c);
-	clReleaseMemObject(device_a);
-	clReleaseMemObject(device_b);
-	clReleaseMemObject(device_c);
-	//clReleaseCommandQueue(queue);
-	//clReleaseContext(context);
-
-	return status;
-}
 
 int main(int argc, char const *argv[]) {
     /* old sanity checks
@@ -405,10 +306,24 @@ int main(int argc, char const *argv[]) {
 	std::chrono::duration<double> eigen_duration_loop = std::chrono::duration<double>::zero();
 	std::chrono::duration<double> mkl_duration_loop = std::chrono::duration<double>::zero();
 	std::chrono::duration<double> kenn_duration_loop = std::chrono::duration<double>::zero();
-	std::chrono::duration<double> cblast_duration_loop = std::chrono::duration<double>::zero();
 	const size_t align = 256;
+    
+    int iterations = 1000;
+    bool use_eigen = false;
+    if (argc == 1) {
+        iterations = 1000;
+        use_eigen = false;
+    } else if (argc == 2) {
+        iterations = std::atoi(argv[1]);
+    } else if (argc == 3) {
+        iterations = std::atoi(argv[1]);
+        use_eigen = std::atoi(argv[2]);
+    } else {
+        std::cerr << "Usage: " << argv[0] << " [iterations=1000] [use_eigen=0]" << std::endl;
+        std::exit(1);
+    }
 
-	for (int i = 0; i<1000; i++) {
+	for (int i = 0; i<iterations; i++) {
 
 		char offsetc = 'F';
 		bool zero_oa = 1;
@@ -436,40 +351,41 @@ int main(int argc, char const *argv[]) {
 
 		Eigen::Matrix<int32_t, Eigen::Dynamic,Eigen::Dynamic> eigen_A_tmp = A.cast<int32_t>();
 		Eigen::Matrix<int32_t, Eigen::Dynamic,Eigen::Dynamic> eigen_B_tmp = B.cast<int32_t>();
-		
-		// Copy onto aligned memory
+
+		//EIGEN
+        if (use_eigen) {
+          // Copy onto aligned memory
+          alloc::AlignedVector<int32_t, align> A_EIGEN(M*K);
+		  alloc::AlignedVector<int32_t, align> B_EIGEN(K*N);
+          alloc::AlignedVector<int32_t, align> C_EIGEN(M*N);
+            
+		  std::copy(eigen_A_tmp.data(), eigen_A_tmp.data() + eigen_A_tmp.size(), A_EIGEN.get());
+		  std::copy(eigen_B_tmp.data(), eigen_B_tmp.data() + eigen_B_tmp.size(), B_EIGEN.get());
+		  std::copy(C.data(), C.data() + C.size(), C_EIGEN.get());
+
+		  //Eigen bug: https://stackoverflow.com/questions/54738495/eigenmapd-matrix-from-raw-buffer-gives-object-allocated-on-stack-is-too-big/
+		  Eigen::Map<Eigen::Matrix<int32_t, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor> > eigen_a(A_EIGEN.get(), M, K);
+		  Eigen::Map<Eigen::Matrix<int32_t, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor> > eigen_b(B_EIGEN.get(), K, N);
+          Eigen::Map<Eigen::Matrix<int32_t, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor> > eigen_c(C_EIGEN.get(), M, N);
+
+
+
+		  auto eigen_start = std::chrono::system_clock::now();
+		  eigen_c.noalias() += (eigen_a*(int)alpha)*(eigen_b*(int)beta);
+		  auto eingen_end = std::chrono::system_clock::now();
+		  eigen_duration_loop += (eingen_end - eigen_start);
+        }
+        
+        //MKL
+        // Copy onto aligned memory
 		alloc::AlignedVector<int8_t, align> A_MKL(M*K);
 		alloc::AlignedVector<int8_t, align> B_MKL(K*N);
 		alloc::AlignedVector<int32_t, align> C_MKL(M*N);
 
-		alloc::AlignedVector<int32_t, align> A_EIGEN(M*K);
-		alloc::AlignedVector<int32_t, align> B_EIGEN(K*N);
-		alloc::AlignedVector<int32_t, align> C_EIGEN(M*N);
-
-		//MKL
+        
 		std::copy(A.data(), A.data() + A.size(), A_MKL.get());
 		std::copy(B.data(), B.data() + B.size(), B_MKL.get());
 		std::copy(C.data(), C.data() + C.size(), C_MKL.get());
-
-		//EIGEN
-		std::copy(eigen_A_tmp.data(), eigen_A_tmp.data() + eigen_A_tmp.size(), A_EIGEN.get());
-		std::copy(eigen_B_tmp.data(), eigen_B_tmp.data() + eigen_B_tmp.size(), B_EIGEN.get());
-		std::copy(C.data(), C.data() + C.size(), C_EIGEN.get());
-
-		//Eigen bug: https://stackoverflow.com/questions/54738495/eigenmapd-matrix-from-raw-buffer-gives-object-allocated-on-stack-is-too-big/
-		Eigen::Map<Eigen::Matrix<int32_t, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor> > eigen_a(A_EIGEN.get(), M, K);
-		Eigen::Map<Eigen::Matrix<int32_t, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor> > eigen_b(B_EIGEN.get(), K, N);
-		Eigen::Map<Eigen::Matrix<int32_t, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor> > eigen_c(C_EIGEN.get(), M, N);
-
-		//Sanity check
-		Eigen::Map<Eigen::Matrix<int32_t, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor> > mkl_c_check(C_MKL.get(), M, N);
-
-
-
-		//auto eigen_start = std::chrono::system_clock::now();
-		//eigen_c.noalias() += (eigen_a*(int)alpha)*(eigen_b*(int)beta);
-		//auto eingen_end = std::chrono::system_clock::now();
-		//eigen_duration_loop += (eingen_end - eigen_start);
 
 		auto mkl_start = std::chrono::system_clock::now();
 		auto status = mkldnn_gemm_s8s8s32(&transA, &transB, &offsetc,
@@ -482,11 +398,6 @@ int main(int argc, char const *argv[]) {
 			std::cout << "we died at " << i << std::endl;
 			break;
 		}
-
-		//if (!eigen_c.isApprox(mkl_c_check)){
-		//	std::cout << "WRONG RESULT at " << i << std::endl;
-		//	break;
-		//}
 
 		//Now for kenneth's Matrices
 		Eigen::Matrix<float, Eigen::Dynamic,Eigen::Dynamic, Eigen::RowMajor> kenneth_a_tmp = A.cast<float>();
@@ -511,29 +422,23 @@ int main(int argc, char const *argv[]) {
 		alloc::AlignedVector<float, align> C_kenn(M*N);
 
 		auto kenn_start = std::chrono::system_clock::now();
-		intgemm::Int8::Multiply(A_prepared.get(), B_prepared.get(), intgemm::JustUnquantizeC(C_kenn.get(), 1.0 / (quant_mult * quant_mult)), M, K, N);
+		intgemm::Int8::Multiply(A_prepared.get(), B_prepared.get(), M, K, N, intgemm::callbacks::UnquantizeAndWrite(1.0 / (quant_mult * quant_mult), C_kenn.get()));
 		auto kenn_end = std::chrono::system_clock::now();
 
 		kenn_duration_loop += (kenn_end - kenn_start);
 
-		auto cblast_start = std::chrono::system_clock::now();
-		int multStatus = openCLGemm(M, N, K);
-		if (multStatus != CLBlastSuccess) {
-			std::cerr << "OpenCL multiply failed: " << multStatus << std::endl;
-			break;
-		}
-		auto cblast_end = std::chrono::system_clock::now();
-		cblast_duration_loop += (cblast_end - cblast_start);
 
 
 	}
 	std::cout << std::fixed;
 	std::cout.precision(10);
-	std::cout << "In loop, Eigen took: " << eigen_duration_loop.count() << " seconds." << std::endl << 
-	             "           MKL took: " << mkl_duration_loop.count() << " seconds." << std::endl << 
-	             "Kenneth's work took: " << kenn_duration_loop.count() << " seconds." << std::endl << 
-	             " OpenCL cBLAST took: " << cblast_duration_loop.count() << " seconds" << std::endl <<
-	             "Alignment was: " << align << "." << std::endl;
+    std::cout << "In loop, for " << iterations << " interations:" << std::endl;
+    if (use_eigen)
+        std::cout <<"         Eigen took: " << eigen_duration_loop.count() << " seconds." << std::endl;
+    
+    std::cout << "           MKL took: " << mkl_duration_loop.count() << " seconds." << std::endl << 
+                    "Kenneth's work took: " << kenn_duration_loop.count() << " seconds." << std::endl << 
+                    "Alignment was: " << align << "." << std::endl;
 
 
     return 0;

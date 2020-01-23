@@ -12,9 +12,13 @@ g++ bench.cpp -lmkldnn -O3 -L./ -lintgemm -march=native
 
 ## Changing parameters
 All the parameters are hardcoded
-- The memory alignment can be changed here: https://github.com/XapaJIaMnu/gemmBench/blob/master/bench.cpp#L90
-- Matrix sizes can be changed here: https://github.com/XapaJIaMnu/gemmBench/blob/master/bench.cpp#L101
+- The memory alignment can be changed here: https://github.com/XapaJIaMnu/gemmBench/blob/master/bench.cpp#L309
+- Matrix sizes can be changed here: https://github.com/XapaJIaMnu/gemmBench/blob/master/bench.cpp#L334
 - For intgemm to work, you need M and N to be a multiple of 8 and K to be a multiple of 32
 
 ## Caveats
 The intgemms comparison is not a 100% fair, as it does less work. Eigen and MKL-dnn comparisons should be completely fair.
+
+## OpenCL
+There's a deprecated OpenCL version WiP in https://github.com/XapaJIaMnu/gemmBench/blob/master/bench_opencl_DEPRECATED.cpp
+
