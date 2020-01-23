@@ -90,12 +90,8 @@ void printMKLdnnStatus(mkldnn_status_t& status) {
         std::cout << "MKL success." << std::endl;
     } else if (status == mkldnn_out_of_memory) {
         std::cout << "The operation failed due to an out-of-memory condition." << std::endl;
-    } else if (status == mkldnn_try_again) {
-        std::cout << "The operation failed and should be retried." << std::endl;
     } else if (status == mkldnn_invalid_arguments ) {
         std::cout << "The operation failed because of incorrect function arguments." << std::endl;
-    } else if (status == mkldnn_not_ready) {
-        std::cout << "The operation failed because a primitive was not ready for execution." << std::endl;
     } else if (status == mkldnn_unimplemented) {
         std::cout << "The operation failed because requested functionality is not implemented." << std::endl;
     } else if (status == mkldnn_iterator_ends) {
@@ -322,38 +318,37 @@ int main(int argc, char const *argv[]) {
         std::cerr << "Usage: " << argv[0] << " [iterations=1000] [use_eigen=0]" << std::endl;
         std::exit(1);
     }
-
-	for (int i = 0; i<iterations; i++) {
-
-		char offsetc = 'F';
+    
+        char offsetc = 'F';
 		bool zero_oa = 1;
 		bool zero_ob = 1;
 		bool zero_oc = 0;
 		char transA = 'N';
 		char transB = 'n';
-		const int M = 320;
-		const int N = 80;
-		const int K = 320;
-		float alpha = 2;
+		const int M = 1024;
+		const int N = 1024;
+		const int K = 1024;
+		float alpha = 1;
 		float beta = 1;
-		int lda = M;
-		int ldb = K;
-		int ldc = M;
+		int lda = K;
+		int ldb = N;
+		int ldc = N;
 		int8_t oa = 0;
 		int8_t ob = 0;
 		std::array<int32_t, 1> oc = {0};
 
+	for (int i = 0; i<iterations; i++) {
+
 		//Construct matrices
 
-		Eigen::Matrix<int8_t, Eigen::Dynamic,Eigen::Dynamic> A = Eigen::Matrix<int8_t, Eigen::Dynamic,Eigen::Dynamic>::Random(M,K);
-		Eigen::Matrix<int8_t, Eigen::Dynamic,Eigen::Dynamic> B = Eigen::Matrix<int8_t, Eigen::Dynamic,Eigen::Dynamic>::Random(K,N);
-		Eigen::Matrix<int32_t, Eigen::Dynamic,Eigen::Dynamic> C = Eigen::Matrix<int32_t, Eigen::Dynamic,Eigen::Dynamic>::Random(M,N);
-
-		Eigen::Matrix<int32_t, Eigen::Dynamic,Eigen::Dynamic> eigen_A_tmp = A.cast<int32_t>();
-		Eigen::Matrix<int32_t, Eigen::Dynamic,Eigen::Dynamic> eigen_B_tmp = B.cast<int32_t>();
+		Eigen::Matrix<int8_t, Eigen::Dynamic,Eigen::Dynamic, Eigen::RowMajor> A = Eigen::Matrix<int8_t, Eigen::Dynamic,Eigen::Dynamic>::Random(M,K);
+		Eigen::Matrix<int8_t, Eigen::Dynamic,Eigen::Dynamic, Eigen::RowMajor> B = Eigen::Matrix<int8_t, Eigen::Dynamic,Eigen::Dynamic>::Random(K,N);
+		Eigen::Matrix<int32_t, Eigen::Dynamic,Eigen::Dynamic, Eigen::RowMajor> C = Eigen::Matrix<int32_t, Eigen::Dynamic,Eigen::Dynamic>::Random(M,N);
 
 		//EIGEN
         if (use_eigen) {
+          Eigen::Matrix<int32_t, Eigen::Dynamic,Eigen::Dynamic> eigen_A_tmp = A.cast<int32_t>();
+		  Eigen::Matrix<int32_t, Eigen::Dynamic,Eigen::Dynamic> eigen_B_tmp = B.cast<int32_t>();
           // Copy onto aligned memory
           alloc::AlignedVector<int32_t, align> A_EIGEN(M*K);
 		  alloc::AlignedVector<int32_t, align> B_EIGEN(K*N);
@@ -376,7 +371,7 @@ int main(int argc, char const *argv[]) {
 		  eigen_duration_loop += (eingen_end - eigen_start);
         }
         
-        //MKL
+        //MKL-DNN
         // Copy onto aligned memory
 		alloc::AlignedVector<int8_t, align> A_MKL(M*K);
 		alloc::AlignedVector<int8_t, align> B_MKL(K*N);
@@ -388,14 +383,20 @@ int main(int argc, char const *argv[]) {
 		std::copy(C.data(), C.data() + C.size(), C_MKL.get());
 
 		auto mkl_start = std::chrono::system_clock::now();
-		auto status = mkldnn_gemm_s8s8s32(&transA, &transB, &offsetc,
-	        &M, &N, &K, &alpha, A_MKL.get(), &lda, &oa, B_MKL.get(), &ldb, &ob,
-	        &beta, C_MKL.get(), &ldc, oc.data());
+		//auto status = mkldnn_gemm_s8s8s32(transA, transB, offsetc,
+	    //    M, N, K, alpha, A_MKL.get(), lda, oa, B_MKL.get(), ldb, ob,
+	    //    beta, C_MKL.get(), ldc, oc.data());
+        
+        
+        auto status = dnnl_gemm_s8s8s32(transA, transB, offsetc,
+            M, N, K, alpha, A_MKL.get(), lda, oa, B_MKL.get(), ldb, ob,
+            beta, C_MKL.get(), ldc, oc.data());
 		auto mkl_end = std::chrono::system_clock::now();
 
 		mkl_duration_loop += (mkl_end - mkl_start);
 		if (status != mkldnn_success) {
 			std::cout << "we died at " << i << std::endl;
+            printMKLdnnStatus(status);
 			break;
 		}
 
@@ -426,6 +427,8 @@ int main(int argc, char const *argv[]) {
 		auto kenn_end = std::chrono::system_clock::now();
 
 		kenn_duration_loop += (kenn_end - kenn_start);
+        
+        //MKL (32bit) floats
 
 
 
