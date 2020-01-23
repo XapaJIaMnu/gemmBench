@@ -7,13 +7,13 @@ int8_t gemm benchmark between Eigen, kpu's [intgemm](https://github.com/kpu/intg
 - Install Eigen from your favourite provider
 
 ```
-g++ bench.cpp -lmkldnn -O3 -L./ -lintgemm -march=native
+g++ bench.cpp ../intgemm/intgemm.cc -I../intgemm/build -ldnnl -march=native -O3
 ```
 
 ## Changing parameters
 All the parameters are hardcoded
-- The memory alignment can be changed here: https://github.com/XapaJIaMnu/gemmBench/blob/master/bench.cpp#L309
-- Matrix sizes can be changed here: https://github.com/XapaJIaMnu/gemmBench/blob/master/bench.cpp#L334
+- The memory alignment can be changed here: https://github.com/XapaJIaMnu/gemmBench/blob/master/bench.cpp#L34
+- Matrix sizes can be changed here: https://github.com/XapaJIaMnu/gemmBench/blob/master/bench.cpp#L57
 - For intgemm to work, you need M and N to be a multiple of 8 and K to be a multiple of 32
 
 ## Caveats
