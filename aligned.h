@@ -5,10 +5,10 @@
 
 namespace alloc {
 
-template <class T, size_t S> class AlignedVector {
+template <class T> class AlignedVector {
   public:
-    explicit AlignedVector(std::size_t size)
-      : mem_(static_cast<T*>(aligned_alloc(S, size * sizeof(T)))) {}
+    explicit AlignedVector(std::size_t size, size_t bytes)
+      : mem_(static_cast<T*>(aligned_alloc(bytes, ((size * sizeof(T)) + (bytes -1)) & ~(bytes -1)))) {}
 
     ~AlignedVector() { std::free(mem_); }
 
