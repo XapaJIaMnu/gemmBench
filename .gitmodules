@@ -7,3 +7,6 @@
 [submodule "libs/intgemm"]
 	path = libs/intgemm
 	url = https://github.com/kpu/intgemm.git
+[submodule "libs/FBGEMM"]
+	path = libs/FBGEMM
+	url = https://github.com/pytorch/FBGEMM.git
