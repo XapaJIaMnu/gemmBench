@@ -9,6 +9,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 set(DNNL_BUILD_TESTS OFF CACHE BOOL "Disable dnnl tests")
+set(INTGEMM_DONT_BUILD_TESTS ON CACHE BOOL "Disable intgemm tests")
 
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native")
