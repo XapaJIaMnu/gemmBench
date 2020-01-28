@@ -7,6 +7,7 @@
 #include "intgemm.h"
 #include "aligned.h"
 #include <unordered_map>
+#include "fbgemm_tests.h"
 
 
 void printDNNLStatus(dnnl_status_t& status) {
@@ -90,7 +91,7 @@ std::ostream& operator<<(std::ostream& os, const archInfo<A>& a) {
 }
 
 template<Arch architecture>
-void benchmarkLoop(int iterations, std::vector<matrix_size>& matrices, const size_t align, bool use_eigen) {
+void benchmarkLoop(int iterations, std::vector<matrix_size>& matrices, const size_t align, bool use_fbgemm, bool use_eigen) {
 
   archInfo<architecture> myarch;
   auto arch_status = dnnl_set_max_cpu_isa(myarch.dnnl_);
@@ -108,6 +109,8 @@ void benchmarkLoop(int iterations, std::vector<matrix_size>& matrices, const siz
   std::chrono::duration<double> mklS_duration_loop = std::chrono::duration<double>::zero();
   std::chrono::duration<double> kenn_duration_loop = std::chrono::duration<double>::zero();
   std::chrono::duration<double> kennU_duration_loop = std::chrono::duration<double>::zero();
+  std::chrono::duration<double> fbgemm_duration_loop = std::chrono::duration<double>::zero();
+  std::chrono::duration<double> fbgemmSPM_duration_loop = std::chrono::duration<double>::zero();
 
   for (auto&& sizes : matrices) {
 
@@ -297,8 +300,34 @@ void benchmarkLoop(int iterations, std::vector<matrix_size>& matrices, const siz
         break;
       }
 
+      if (use_fbgemm) {
+        //Now fbgemm
+        alloc::AlignedVector<uint8_t> A_FBGEMM(M*K, align);
+        alloc::AlignedVector<int8_t> B_FBGEMM(K*N, align);
+        alloc::AlignedVector<int32_t> C_FBGEMM(M*N, align);
 
-      /*First mkl call is slow, so ignore results from the first run of the loop*/
+
+        std::copy(A.data(), A.data() + A.size(), A_FBGEMM.get());
+        std::copy(B.data(), B.data() + B.size(), B_FBGEMM.get());
+        std::copy(C.data(), C.data() + C.size(), C_FBGEMM.get());
+
+        fbgemm_duration_loop += fbgemm::fbgemmPackedTimes(A_FBGEMM, B_FBGEMM, C_FBGEMM, M, N, K);
+
+        //And fbgemm again
+
+        alloc::AlignedVector<uint8_t> A_FBGEMM1(M*K, align);
+        alloc::AlignedVector<int8_t> B_FBGEMM1(K*N, align);
+        alloc::AlignedVector<int32_t> C_FBGEMM1(M*N, align);
+
+
+        std::copy(A.data(), A.data() + A.size(), A_FBGEMM1.get());
+        std::copy(B.data(), B.data() + B.size(), B_FBGEMM1.get());
+        std::copy(C.data(), C.data() + C.size(), C_FBGEMM1.get());
+
+
+        fbgemmSPM_duration_loop += fbgemm::fbgemmSPMTimes(A_FBGEMM1, B_FBGEMM1, C_FBGEMM1, M, N, K);
+      }
+      /*First mkl and fbgemm calls are slow, so ignore results from the first run of the loop*/
       if (i == 0) {
         eigen_duration_loop = std::chrono::duration<double>::zero();
         mkl_duration_loop = std::chrono::duration<double>::zero();
@@ -306,20 +335,28 @@ void benchmarkLoop(int iterations, std::vector<matrix_size>& matrices, const siz
         mklS_duration_loop = std::chrono::duration<double>::zero();
         kenn_duration_loop = std::chrono::duration<double>::zero();
         kennU_duration_loop = std::chrono::duration<double>::zero();
+        fbgemm_duration_loop = std::chrono::duration<double>::zero();
+        fbgemmSPM_duration_loop = std::chrono::duration<double>::zero();
       }
     }
     std::cout << std::fixed;
     std::cout.precision(10);
     std::cout << "Arch: " << myarch << std::endl << sizes << " in loop, for " << iterations << " interations:" << std::endl;
     if (use_eigen)
-      std::cout <<"    Eigen i32gemm took: " << eigen_duration_loop.count() << " seconds." << std::endl;
+      std::cout <<"      Eigen i32gemm took: " << eigen_duration_loop.count() << " seconds." << std::endl;
 
-    std::cout <<  "dnnl s8s8s32 gemm took: " << mkl_duration_loop.count() << " seconds." << std::endl <<
-                  "dnnl u8s8s32 gemm took: " << mklU_duration_loop.count() << " seconds." << std::endl <<
-                  "       dnnl sgemm took: " << mklS_duration_loop.count() << " seconds." << std::endl <<
-                  "          Intgemm took: " << kenn_duration_loop.count() << " seconds." << std::endl <<
-                  "  Intgemm Shifted took: " << kennU_duration_loop.count() << " seconds." << std::endl <<
-                      "Alignment was: " << align << "." << std::endl;
+    std::cout <<  "  dnnl s8s8s32 gemm took: " << mkl_duration_loop.count() << " seconds." << std::endl <<
+                  "  dnnl u8s8s32 gemm took: " << mklU_duration_loop.count() << " seconds." << std::endl <<
+                  "         dnnl sgemm took: " << mklS_duration_loop.count() << " seconds." << std::endl <<
+                  "            Intgemm took: " << kenn_duration_loop.count() << " seconds." << std::endl <<
+                  "    Intgemm Shifted took: " << kennU_duration_loop.count() << " seconds." << std::endl;
+    if (use_fbgemm) {
+      std::cout << 
+                  "fbgemm SparseXDense took: " << fbgemmSPM_duration_loop.count() << " seconds." << std::endl <<
+                  "      fbgemm Packed took: " << fbgemm_duration_loop.count() << " seconds." << std::endl;
+    }
+                  
+                     std::cout << "Alignment was: " << align << "." << std::endl;
 
   }
  }
@@ -380,17 +417,29 @@ int main(int argc, char const *argv[]) {
     {200, 256, 256},
     {1, 64, 8}};//zero, one, two, three, four, five, six, seven, eight};
 
+  //fbgemm only supports AVX2 and above and doesn't support architecture limitations
+  bool use_fbgemm = true;
+  if (myarch != any) {
+    use_fbgemm = false;
+    std::cout << "Fbgemm tests will not run, because you requested a specific architecture and this is not supported by fbgemm." << std::endl;
+  }
+
+  if (intgemm::kCPU <= intgemm::CPUType::AVX2) {
+    use_fbgemm = false;
+    std::cout << "Fbgemm tests will not run, because the architecture doesn't support it." << std::endl;
+  }
+
 
   if (myarch==ssse3) {
-    benchmarkLoop<ssse3>(iterations, matrices, align, use_eigen);
+    benchmarkLoop<ssse3>(iterations, matrices, align, use_fbgemm, use_eigen);
   } else if (myarch==avx2) {
-    benchmarkLoop<avx2>(iterations, matrices, align, use_eigen);
+    benchmarkLoop<avx2>(iterations, matrices, align, use_fbgemm, use_eigen);
   } else if (myarch==avx512) {
-    benchmarkLoop<avx512>(iterations, matrices, align, use_eigen);
+    benchmarkLoop<avx512>(iterations, matrices, align, use_fbgemm, use_eigen);
   } else if (myarch==avx512vnni) {
-    benchmarkLoop<avx512vnni>(iterations, matrices, align, use_eigen);
+    benchmarkLoop<avx512vnni>(iterations, matrices, align, use_fbgemm, use_eigen);
   } else if (myarch==any) {
-    benchmarkLoop<any>(iterations, matrices, align, use_eigen);
+    benchmarkLoop<any>(iterations, matrices, align, use_fbgemm, use_eigen);
   }
 
   return 0;

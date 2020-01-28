@@ -33,3 +33,8 @@
 
 # Cmake
 build/*
+
+#vscode
+build_VSCODE/*
+.vscode/*
+
