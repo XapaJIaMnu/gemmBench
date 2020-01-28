@@ -22,7 +22,7 @@ Some paramters are hardcoded
 - You can limit `arch` for `intgemm` and `dnnl`. Supported values: `ssse3`, `avx2`, `avx512`, `avx512vnni` and `any`
 - Since `Eigen` is a lot slower than the other two, its execution is disabled by default. To enable it, provide the argument.
 
-##Caveats
+## Caveats
 - Fbgemm only supports AVX2 processors or newer, so the test is skipped on older architectures.
 - Fbgemm doesn't allow for limiting the arch type, so the test is skipped in case explicit arch is requested
 
