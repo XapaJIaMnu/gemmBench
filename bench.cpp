@@ -424,7 +424,7 @@ int main(int argc, char const *argv[]) {
     std::cout << "Fbgemm tests will not run, because you requested a specific architecture and this is not supported by fbgemm." << std::endl;
   }
 
-  if (intgemm::kCPU <= intgemm::CPUType::AVX2) {
+  if (intgemm::kCPU < intgemm::CPUType::AVX2) {
     use_fbgemm = false;
     std::cout << "Fbgemm tests will not run, because the architecture doesn't support it." << std::endl;
   }
