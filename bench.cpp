@@ -110,7 +110,7 @@ void benchmarkLoop(int iterations, std::vector<matrix_size>& matrices, const siz
   std::chrono::duration<double> kenn_duration_loop = std::chrono::duration<double>::zero();
   std::chrono::duration<double> kennU_duration_loop = std::chrono::duration<double>::zero();
   std::chrono::duration<double> fbgemm_duration_loop = std::chrono::duration<double>::zero();
-  std::chrono::duration<double> fbgemmSPM_duration_loop = std::chrono::duration<double>::zero();
+  //std::chrono::duration<double> fbgemmSPM_duration_loop = std::chrono::duration<double>::zero();
 
   for (auto&& sizes : matrices) {
 
@@ -325,7 +325,7 @@ void benchmarkLoop(int iterations, std::vector<matrix_size>& matrices, const siz
         std::copy(C.data(), C.data() + C.size(), C_FBGEMM1.get());
 
 
-        fbgemmSPM_duration_loop += fbgemm::fbgemmSPMTimes(A_FBGEMM1, B_FBGEMM1, C_FBGEMM1, M, N, K);
+        //fbgemmSPM_duration_loop += fbgemm::fbgemmSPMTimes(A_FBGEMM1, B_FBGEMM1, C_FBGEMM1, M, N, K);
       }
       /*First mkl and fbgemm calls are slow, so ignore results from the first run of the loop*/
       if (i == 0) {
@@ -336,7 +336,7 @@ void benchmarkLoop(int iterations, std::vector<matrix_size>& matrices, const siz
         kenn_duration_loop = std::chrono::duration<double>::zero();
         kennU_duration_loop = std::chrono::duration<double>::zero();
         fbgemm_duration_loop = std::chrono::duration<double>::zero();
-        fbgemmSPM_duration_loop = std::chrono::duration<double>::zero();
+        //fbgemmSPM_duration_loop = std::chrono::duration<double>::zero();
       }
     }
     std::cout << std::fixed;
@@ -352,7 +352,7 @@ void benchmarkLoop(int iterations, std::vector<matrix_size>& matrices, const siz
                   "    Intgemm Shifted took: " << kennU_duration_loop.count() << " seconds." << std::endl;
     if (use_fbgemm) {
       std::cout << 
-                  "fbgemm SparseXDense took: " << fbgemmSPM_duration_loop.count() << " seconds." << std::endl <<
+                  //"fbgemm SparseXDense took: " << fbgemmSPM_duration_loop.count() << " seconds." << std::endl <<
                   "      fbgemm Packed took: " << fbgemm_duration_loop.count() << " seconds." << std::endl;
     }
                   

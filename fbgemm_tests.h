@@ -1,6 +1,6 @@
 #include "aligned.h"
 #include "libs/FBGEMM/include/fbgemm/Fbgemm.h"
-#include "libs/FBGEMM/include/fbgemm/FbgemmSpMM.h"
+//#include "libs/FBGEMM/include/fbgemm/FbgemmSpMM.h"
 #include <chrono>
 
 
@@ -20,7 +20,7 @@ void transpose_matrix(
     }
   } // for each output row
 }
-
+/*
 std::chrono::duration<double> fbgemmSPMTimes(alloc::AlignedVector<uint8_t>& A,
                  alloc::AlignedVector<int8_t>& B,
                  alloc::AlignedVector<int32_t>& C,
@@ -44,11 +44,11 @@ std::chrono::duration<double> fbgemmSPMTimes(alloc::AlignedVector<uint8_t>& A,
 
   auto fn = generateSpMM<int32_t>(n, m, k, bptr, ldbt, ldat, ldct);
   auto start = std::chrono::system_clock::now();
-  fn(aptr, C.get(), 0 /* accum_flag */);
+  fn(aptr, C.get(), 0 ); // accum_flag 
   auto end = std::chrono::system_clock::now();
 
   return (end-start);
-}
+}*/
 
 
 inline void col_offsets_with_zero_pt_s8acc32(
