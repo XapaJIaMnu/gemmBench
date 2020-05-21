@@ -6,6 +6,7 @@ execute_process(COMMAND git submodule update --init --recursive --no-fetch
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3")
 endif()
 
 set(DNNL_BUILD_TESTS OFF CACHE BOOL "Disable dnnl tests")
