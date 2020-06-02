@@ -1,16 +1,19 @@
 # gemmBench
-int8_t gemm benchmark between Eigen, kpu's [intgemm](https://github.com/kpu/intgemm), [dnnl](https://github.com/intel/mkl-dnn) and [fbgemm](https://github.com/pytorch/FBGEMM/)
+int8_t gemm benchmark between Eigen, kpu's [intgemm](https://github.com/kpu/intgemm), [dnnl](https://github.com/intel/mkl-dnn), [fbgemm](https://github.com/pytorch/FBGEMM/), and [mkl](https://software.intel.com/content/www/us/en/develop/tools/math-kernel-library.html).
 
 ## Compilation
 ```
 mkdir build
 cd build
-cmake ..
+cmake -DWITH_MKL=OFF ..
 make -j
 ```
+
+If you have [Intel MKL](https://software.intel.com/content/www/us/en/develop/tools/math-kernel-library.html) installed on your system, you can set `-DWITH_MKL=ON` during the CMake configuration.
+
 ## Usage
 ```
-./benchmark [iterations=100] [arch=any] [use_eigen=0]
+./benchmark [iterations=1000] [arch=any] [use_eigen=0]
 ```
 
 ## Changing parameters
