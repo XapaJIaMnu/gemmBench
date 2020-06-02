@@ -9,10 +9,14 @@
 #include <unordered_map>
 #include "fbgemm_tests.h"
 
+#ifdef WITH_MKL
+#  include <mkl.h>
+#endif
+
 
 void printDNNLStatus(dnnl_status_t& status) {
   if (status == dnnl_success) {
-      std::cout << "MKL success." << std::endl;
+      std::cout << "DNNL success." << std::endl;
   } else if (status == dnnl_out_of_memory ) {
       std::cout << "The operation failed due to an out-of-memory condition." << std::endl;
   } else if (status == dnnl_invalid_arguments ) {
@@ -52,6 +56,9 @@ template<> struct archInfo<Arch::ssse3> {
   using intgemm_ = intgemm::SSSE3_8bit;
   using intgemmShift_ = intgemm::SSSE3_8bit;
   dnnl_cpu_isa_t dnnl_ = dnnl_cpu_isa_t::dnnl_cpu_isa_sse41;
+#ifdef WITH_MKL
+  int mkl_ = MKL_ENABLE_SSE4_2;
+#endif
   std::string name = "SSSE3";
 };
 
@@ -59,6 +66,9 @@ template<> struct archInfo<Arch::avx2> {
   using intgemm_ = intgemm::AVX2_8bit;
   using intgemmShift_ = intgemm::AVX2_8bit;
   dnnl_cpu_isa_t dnnl_ = dnnl_cpu_isa_avx2;
+#ifdef WITH_MKL
+  int mkl_ = MKL_ENABLE_AVX2;
+#endif
   std::string name = "AVX2";
 };
 
@@ -66,6 +76,9 @@ template<> struct archInfo<Arch::avx512> {
   using intgemm_ = intgemm::AVX512_8bit;
   using intgemmShift_ = intgemm::AVX512_8bit;
   dnnl_cpu_isa_t dnnl_ = dnnl_cpu_isa_avx512_core;
+#ifdef WITH_MKL
+  int mkl_ = MKL_ENABLE_AVX512;
+#endif
   std::string name = "AVX512";
 };
 
@@ -73,6 +86,9 @@ template<> struct archInfo<Arch::avx512vnni> {
   using intgemm_ = intgemm::AVX512VNNI_8bit;
   using intgemmShift_ = intgemm::AVX512VNNI_8bit;
   dnnl_cpu_isa_t dnnl_ = dnnl_cpu_isa_avx512_core_vnni;
+#ifdef WITH_MKL
+  int mkl_ = MKL_ENABLE_AVX512_E1;
+#endif
   std::string name = "AVX512VNNI";
 };
 
@@ -80,6 +96,9 @@ template<> struct archInfo<Arch::any> {
   using intgemm_ = intgemm::Int8;
   using intgemmShift_ = intgemm::Int8Shift;
   dnnl_cpu_isa_t dnnl_ = dnnl_cpu_isa_all;
+#ifdef WITH_MKL
+  int mkl_ = -1;
+#endif
   std::string name = "any";
 };
 
@@ -102,11 +121,17 @@ void benchmarkLoop(int iterations, std::vector<matrix_size>& matrices, const siz
     return;
   }
 
+#ifdef WITH_MKL
+  if (myarch.mkl_ >= 0)
+    mkl_enable_instructions(myarch.mkl_);
+#endif
+
 
   std::chrono::duration<double> eigen_duration_loop = std::chrono::duration<double>::zero();
+  std::chrono::duration<double> dnnl_duration_loop = std::chrono::duration<double>::zero();
+  std::chrono::duration<double> dnnlU_duration_loop = std::chrono::duration<double>::zero();
+  std::chrono::duration<double> dnnlS_duration_loop = std::chrono::duration<double>::zero();
   std::chrono::duration<double> mkl_duration_loop = std::chrono::duration<double>::zero();
-  std::chrono::duration<double> mklU_duration_loop = std::chrono::duration<double>::zero();
-  std::chrono::duration<double> mklS_duration_loop = std::chrono::duration<double>::zero();
   std::chrono::duration<double> kenn_duration_loop = std::chrono::duration<double>::zero();
   std::chrono::duration<double> kennU_duration_loop = std::chrono::duration<double>::zero();
   std::chrono::duration<double> fbgemm_duration_loop = std::chrono::duration<double>::zero();
@@ -119,7 +144,7 @@ void benchmarkLoop(int iterations, std::vector<matrix_size>& matrices, const siz
     bool zero_ob = 1;
     bool zero_oc = 0;
     char transA = 'N';
-    char transB = 'n';
+    char transB = 'N';
     const int M = sizes.M;
     const int K = sizes.K;
     const int N = sizes.N;
@@ -169,28 +194,55 @@ void benchmarkLoop(int iterations, std::vector<matrix_size>& matrices, const siz
 
       //MKL-DNN
       // Copy onto aligned memory
-      alloc::AlignedVector<int8_t> A_MKL(M*K, align);
-      alloc::AlignedVector<int8_t> B_MKL(K*N, align);
-      alloc::AlignedVector<int32_t> C_MKL(M*N, align);
+      alloc::AlignedVector<int8_t> A_DNNL(M*K, align);
+      alloc::AlignedVector<int8_t> B_DNNL(K*N, align);
+      alloc::AlignedVector<int32_t> C_DNNL(M*N, align);
 
 
-      std::copy(A.data(), A.data() + A.size(), A_MKL.get());
-      std::copy(B.data(), B.data() + B.size(), B_MKL.get());
-      std::copy(C.data(), C.data() + C.size(), C_MKL.get());
+      std::copy(A.data(), A.data() + A.size(), A_DNNL.get());
+      std::copy(B.data(), B.data() + B.size(), B_DNNL.get());
+      std::copy(C.data(), C.data() + C.size(), C_DNNL.get());
 
-      auto mkl_start = std::chrono::system_clock::now();
+      auto dnnl_start = std::chrono::system_clock::now();
 
       auto status = dnnl_gemm_s8s8s32(transA, transB, offsetc,
-              M, N, K, alpha, A_MKL.get(), lda, oa, B_MKL.get(), ldb, ob,
-              beta, C_MKL.get(), ldc, oc.data());
-      auto mkl_end = std::chrono::system_clock::now();
+              M, N, K, alpha, A_DNNL.get(), lda, oa, B_DNNL.get(), ldb, ob,
+              beta, C_DNNL.get(), ldc, oc.data());
+      auto dnnl_end = std::chrono::system_clock::now();
 
-      mkl_duration_loop += (mkl_end - mkl_start);
+      dnnl_duration_loop += (dnnl_end - dnnl_start);
       if (status != dnnl_success) {
         std::cerr << "we died at " << i << std::endl;
         printDNNLStatus(status);
         break;
       }
+
+#ifdef WITH_MKL
+      {
+        alloc::AlignedVector<int8_t> A_MKL(M*K, align);
+        alloc::AlignedVector<int8_t> B_MKL(K*N, align);
+        alloc::AlignedVector<int32_t> C_MKL(M*N, align);
+
+        std::copy(A.data(), A.data() + A.size(), A_MKL.get());
+        std::copy(B.data(), B.data() + B.size(), B_MKL.get());
+        std::copy(C.data(), C.data() + C.size(), C_MKL.get());
+
+        auto mkl_start = std::chrono::system_clock::now();
+        cblas_gemm_s8u8s32(CblasRowMajor,
+                           transA == 'N' ? CblasNoTrans : CblasTrans,
+                           transB == 'N' ? CblasNoTrans : CblasTrans,
+                           CblasFixOffset,
+                           M, N, K,
+                           alpha,
+                           A_MKL.get(), lda, oa,
+                           B_MKL.get(), ldb, ob,
+                           beta,
+                           C_MKL.get(), ldc, oc.data());
+        auto mkl_end = std::chrono::system_clock::now();
+
+        mkl_duration_loop += (mkl_end - mkl_start);
+      }
+#endif
 
       //Now intgemm
       Eigen::Matrix<float, Eigen::Dynamic,Eigen::Dynamic, Eigen::RowMajor> kenneth_a_tmp = A.cast<float>();
@@ -222,23 +274,23 @@ void benchmarkLoop(int iterations, std::vector<matrix_size>& matrices, const siz
           
       //MKL-DNN SignedXunsigned
       // Copy onto aligned memory
-      alloc::AlignedVector<uint8_t> A1_MKL(M*K, align);
-      alloc::AlignedVector<int8_t> B1_MKL(K*N, align);
-      alloc::AlignedVector<int32_t> C1_MKL(M*N, align);
+      alloc::AlignedVector<uint8_t> A1_DNNL(M*K, align);
+      alloc::AlignedVector<int8_t> B1_DNNL(K*N, align);
+      alloc::AlignedVector<int32_t> C1_DNNL(M*N, align);
 
 
-      std::copy(A.data(), A.data() + A.size(), A1_MKL.get());
-      std::copy(B.data(), B.data() + B.size(), B1_MKL.get());
-      std::copy(C.data(), C.data() + C.size(), C1_MKL.get());
+      std::copy(A.data(), A.data() + A.size(), A1_DNNL.get());
+      std::copy(B.data(), B.data() + B.size(), B1_DNNL.get());
+      std::copy(C.data(), C.data() + C.size(), C1_DNNL.get());
 
-      auto mklU_start = std::chrono::system_clock::now();
+      auto dnnlU_start = std::chrono::system_clock::now();
 
       auto status1 = dnnl_gemm_u8s8s32(transA, transB, offsetc,
-              M, N, K, alpha, A1_MKL.get(), lda, oa, B1_MKL.get(), ldb, ob,
-              beta, C1_MKL.get(), ldc, oc.data());
-      auto mklU_end = std::chrono::system_clock::now();
+              M, N, K, alpha, A1_DNNL.get(), lda, oa, B1_DNNL.get(), ldb, ob,
+              beta, C1_DNNL.get(), ldc, oc.data());
+      auto dnnlU_end = std::chrono::system_clock::now();
 
-      mklU_duration_loop += (mklU_end - mklU_start);
+      dnnlU_duration_loop += (dnnlU_end - dnnlU_start);
       if (status1 != dnnl_success) {
         std::cerr << "we died at " << i << std::endl;
         printDNNLStatus(status1);
@@ -277,23 +329,23 @@ void benchmarkLoop(int iterations, std::vector<matrix_size>& matrices, const siz
 
       kennU_duration_loop += (kennU_end - kennU_start);
 
-      //MKLDNN Single precision
-      alloc::AlignedVector<float> A_MKL_S(M*K, align);
-      alloc::AlignedVector<float> B_MKL_S(K*N, align);
-      alloc::AlignedVector<float> C_MKL_S(M*N, align);
+      //DNNLDNN Single precision
+      alloc::AlignedVector<float> A_DNNL_S(M*K, align);
+      alloc::AlignedVector<float> B_DNNL_S(K*N, align);
+      alloc::AlignedVector<float> C_DNNL_S(M*N, align);
 
-      std::copy(kenneth_a_tmp.data(), kenneth_a_tmp.data() + kenneth_a_tmp.size(), A_MKL_S.get());
-      std::copy(kenneth_b_tmp.data(), kenneth_b_tmp.data() + kenneth_b_tmp.size(), B_MKL_S.get());
-      std::copy(C.data(), C.data() + C.size(), C_MKL_S.get());
+      std::copy(kenneth_a_tmp.data(), kenneth_a_tmp.data() + kenneth_a_tmp.size(), A_DNNL_S.get());
+      std::copy(kenneth_b_tmp.data(), kenneth_b_tmp.data() + kenneth_b_tmp.size(), B_DNNL_S.get());
+      std::copy(C.data(), C.data() + C.size(), C_DNNL_S.get());
 
-      auto mklS_start = std::chrono::system_clock::now();
+      auto dnnlS_start = std::chrono::system_clock::now();
 
       auto status2 = dnnl_sgemm(transA, transB,
-              M, N, K, alpha, A_MKL_S.get(), lda, B_MKL_S.get(), ldb,
-              beta, C_MKL_S.get(), ldc);
-      auto mklS_end = std::chrono::system_clock::now();
+              M, N, K, alpha, A_DNNL_S.get(), lda, B_DNNL_S.get(), ldb,
+              beta, C_DNNL_S.get(), ldc);
+      auto dnnlS_end = std::chrono::system_clock::now();
 
-      mklS_duration_loop += (mklS_end - mklS_start);
+      dnnlS_duration_loop += (dnnlS_end - dnnlS_start);
       if (status2 != dnnl_success) {
         std::cerr << "we died at " << i << std::endl;
         printDNNLStatus(status2);
@@ -327,12 +379,13 @@ void benchmarkLoop(int iterations, std::vector<matrix_size>& matrices, const siz
 
         //fbgemmSPM_duration_loop += fbgemm::fbgemmSPMTimes(A_FBGEMM1, B_FBGEMM1, C_FBGEMM1, M, N, K);
       }
-      /*First mkl and fbgemm calls are slow, so ignore results from the first run of the loop*/
+      /*First dnnl and fbgemm calls are slow, so ignore results from the first run of the loop*/
       if (i == 0) {
         eigen_duration_loop = std::chrono::duration<double>::zero();
+        dnnl_duration_loop = std::chrono::duration<double>::zero();
+        dnnlU_duration_loop = std::chrono::duration<double>::zero();
+        dnnlS_duration_loop = std::chrono::duration<double>::zero();
         mkl_duration_loop = std::chrono::duration<double>::zero();
-        mklU_duration_loop = std::chrono::duration<double>::zero();
-        mklS_duration_loop = std::chrono::duration<double>::zero();
         kenn_duration_loop = std::chrono::duration<double>::zero();
         kennU_duration_loop = std::chrono::duration<double>::zero();
         fbgemm_duration_loop = std::chrono::duration<double>::zero();
@@ -345,9 +398,12 @@ void benchmarkLoop(int iterations, std::vector<matrix_size>& matrices, const siz
     if (use_eigen)
       std::cout <<"      Eigen i32gemm took: " << eigen_duration_loop.count() << " seconds." << std::endl;
 
-    std::cout <<  "  dnnl s8s8s32 gemm took: " << mkl_duration_loop.count() << " seconds." << std::endl <<
-                  "  dnnl u8s8s32 gemm took: " << mklU_duration_loop.count() << " seconds." << std::endl <<
-                  "         dnnl sgemm took: " << mklS_duration_loop.count() << " seconds." << std::endl <<
+    std::cout <<  "  dnnl s8s8s32 gemm took: " << dnnl_duration_loop.count() << " seconds." << std::endl <<
+                  "  dnnl u8s8s32 gemm took: " << dnnlU_duration_loop.count() << " seconds." << std::endl <<
+                  "         dnnl sgemm took: " << dnnlS_duration_loop.count() << " seconds." << std::endl <<
+#ifdef WITH_MKL
+                  " cblas_gemm_s8u8s32 took: " << mkl_duration_loop.count() << " seconds." << std::endl <<
+#endif
                   "            Intgemm took: " << kenn_duration_loop.count() << " seconds." << std::endl <<
                   "    Intgemm Shifted took: " << kennU_duration_loop.count() << " seconds." << std::endl;
     if (use_fbgemm) {
@@ -366,12 +422,6 @@ int main(int argc, char const *argv[]) {
 
   //auto status = dnnl_set_max_cpu_isa(dnnl_cpu_isa_avx512_core);
 
-  std::chrono::duration<double> eigen_duration_loop = std::chrono::duration<double>::zero();
-  std::chrono::duration<double> mkl_duration_loop = std::chrono::duration<double>::zero();
-  std::chrono::duration<double> mklU_duration_loop = std::chrono::duration<double>::zero();
-  std::chrono::duration<double> mklS_duration_loop = std::chrono::duration<double>::zero();
-  std::chrono::duration<double> kenn_duration_loop = std::chrono::duration<double>::zero();
-  std::chrono::duration<double> kennU_duration_loop = std::chrono::duration<double>::zero();
   const size_t align = 256;
 
   int iterations = 1000;
