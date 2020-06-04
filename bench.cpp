@@ -110,7 +110,7 @@ std::ostream& operator<<(std::ostream& os, const archInfo<A>& a) {
 }
 
 template<Arch architecture>
-void benchmarkLoop(int iterations, std::vector<matrix_size>& matrices, const size_t align, bool use_fbgemm, bool use_eigen) {
+void benchmarkLoop(int iterations, std::vector<matrix_size>& matrices, const size_t align, bool use_fbgemm, bool use_eigen, bool use_fp32) {
 
   archInfo<architecture> myarch;
   auto arch_status = dnnl_set_max_cpu_isa(myarch.dnnl_);
@@ -131,7 +131,9 @@ void benchmarkLoop(int iterations, std::vector<matrix_size>& matrices, const siz
   std::chrono::duration<double> dnnl_duration_loop = std::chrono::duration<double>::zero();
   std::chrono::duration<double> dnnlU_duration_loop = std::chrono::duration<double>::zero();
   std::chrono::duration<double> dnnlS_duration_loop = std::chrono::duration<double>::zero();
+  std::chrono::duration<double> dnnl32_duration_loop = std::chrono::duration<double>::zero();
   std::chrono::duration<double> mkl_duration_loop = std::chrono::duration<double>::zero();
+  std::chrono::duration<double> mkl32_duration_loop = std::chrono::duration<double>::zero();
   std::chrono::duration<double> kenn_duration_loop = std::chrono::duration<double>::zero();
   std::chrono::duration<double> kennU_duration_loop = std::chrono::duration<double>::zero();
   std::chrono::duration<double> fbgemm_duration_loop = std::chrono::duration<double>::zero();
@@ -242,7 +244,63 @@ void benchmarkLoop(int iterations, std::vector<matrix_size>& matrices, const siz
 
         mkl_duration_loop += (mkl_end - mkl_start);
       }
+
+      if (use_fp32) { // MKLcblas_Sgemm
+        Eigen::Matrix<float, Eigen::Dynamic,Eigen::Dynamic> eigen_A_tmp = A.cast<float>();
+        Eigen::Matrix<float, Eigen::Dynamic,Eigen::Dynamic> eigen_B_tmp = B.cast<float>();
+
+        alloc::AlignedVector<float> A_MKL(M*K, align);
+        alloc::AlignedVector<float> B_MKL(K*N, align);
+        alloc::AlignedVector<float> C_MKL(M*N, align);
+
+        std::copy(eigen_A_tmp.data(), eigen_A_tmp.data() + eigen_A_tmp.size(), A_MKL.get());
+        std::copy(eigen_B_tmp.data(), eigen_B_tmp.data() + eigen_B_tmp.size(), B_MKL.get());
+        std::copy(C.data(), C.data() + C.size(), C_MKL.get());
+
+        auto mkl_start = std::chrono::system_clock::now();
+        cblas_sgemm(CblasRowMajor,
+                           transA == 'N' ? CblasNoTrans : CblasTrans,
+                           transB == 'N' ? CblasNoTrans : CblasTrans,
+                           /*CblasFixOffset,*/
+                           M, N, K,
+                           alpha,
+                           A_MKL.get(), lda,// oa,
+                           B_MKL.get(), ldb,// ob,
+                           beta,
+                           C_MKL.get(), ldc);// oc.data());
+        auto mkl_end = std::chrono::system_clock::now();
+
+        mkl32_duration_loop += (mkl_end - mkl_start);
+      }
 #endif
+
+      if (use_fp32) { // oneDNN cblas_Sgemm
+        Eigen::Matrix<float, Eigen::Dynamic,Eigen::Dynamic> eigen_A_tmp = A.cast<float>();
+        Eigen::Matrix<float, Eigen::Dynamic,Eigen::Dynamic> eigen_B_tmp = B.cast<float>();
+
+        alloc::AlignedVector<float> A_MKL(M*K, align);
+        alloc::AlignedVector<float> B_MKL(K*N, align);
+        alloc::AlignedVector<float> C_MKL(M*N, align);
+
+        std::copy(eigen_A_tmp.data(), eigen_A_tmp.data() + eigen_A_tmp.size(), A_MKL.get());
+        std::copy(eigen_B_tmp.data(), eigen_B_tmp.data() + eigen_B_tmp.size(), B_MKL.get());
+        std::copy(C.data(), C.data() + C.size(), C_MKL.get());
+
+        auto dnnlfp32_start = std::chrono::system_clock::now();
+        cblas_sgemm(CblasRowMajor,
+                           transA == 'N' ? CblasNoTrans : CblasTrans,
+                           transB == 'N' ? CblasNoTrans : CblasTrans,
+                           /*CblasFixOffset,*/
+                           M, N, K,
+                           alpha,
+                           A_MKL.get(), lda,// oa,
+                           B_MKL.get(), ldb,// ob,
+                           beta,
+                           C_MKL.get(), ldc);// oc.data());
+        auto dnnlfp32_end = std::chrono::system_clock::now();
+
+        dnnl32_duration_loop += (dnnlfp32_end - dnnlfp32_start);
+      }
 
       //Now intgemm
       Eigen::Matrix<float, Eigen::Dynamic,Eigen::Dynamic, Eigen::RowMajor> kenneth_a_tmp = A.cast<float>();
@@ -400,11 +458,15 @@ void benchmarkLoop(int iterations, std::vector<matrix_size>& matrices, const siz
 
     std::cout <<  "  dnnl s8s8s32 gemm took: " << dnnl_duration_loop.count() << " seconds." << std::endl <<
                   "  dnnl u8s8s32 gemm took: " << dnnlU_duration_loop.count() << " seconds." << std::endl <<
-                  "         dnnl sgemm took: " << dnnlS_duration_loop.count() << " seconds." << std::endl <<
+                  "         dnnl sgemm took: " << dnnlS_duration_loop.count() << " seconds." << std::endl;
 #ifdef WITH_MKL
-                  " cblas_gemm_s8u8s32 took: " << mkl_duration_loop.count() << " seconds." << std::endl <<
+      std::cout <<" cblas_gemm_s8u8s32 took: " << mkl_duration_loop.count() << " seconds." << std::endl;
+    if (use_fp32)
+      std::cout <<"    MKL cblas_sgemm took: " << mkl32_duration_loop.count() << " seconds." << std::endl;
 #endif
-                  "            Intgemm took: " << kenn_duration_loop.count() << " seconds." << std::endl <<
+    if (use_fp32)
+      std::cout <<"   DNNL cblas_sgemm took: " << dnnl32_duration_loop.count() << " seconds." << std::endl;
+  std::cout <<    "            Intgemm took: " << kenn_duration_loop.count() << " seconds." << std::endl <<
                   "    Intgemm Shifted took: " << kennU_duration_loop.count() << " seconds." << std::endl;
     if (use_fbgemm) {
       std::cout << 
@@ -456,6 +518,8 @@ int main(int argc, char const *argv[]) {
     std::exit(1);
   }
 
+  bool use_fp32 = false; // Compare the 32bit thingies.
+
   std::vector<matrix_size> matrices = {
     {1024, 1024, 1024},
     {256, 10368, 256},
@@ -481,15 +545,15 @@ int main(int argc, char const *argv[]) {
 
 
   if (myarch==ssse3) {
-    benchmarkLoop<ssse3>(iterations, matrices, align, use_fbgemm, use_eigen);
+    benchmarkLoop<ssse3>(iterations, matrices, align, use_fbgemm, use_eigen, use_fp32);
   } else if (myarch==avx2) {
-    benchmarkLoop<avx2>(iterations, matrices, align, use_fbgemm, use_eigen);
+    benchmarkLoop<avx2>(iterations, matrices, align, use_fbgemm, use_eigen, use_fp32);
   } else if (myarch==avx512) {
-    benchmarkLoop<avx512>(iterations, matrices, align, use_fbgemm, use_eigen);
+    benchmarkLoop<avx512>(iterations, matrices, align, use_fbgemm, use_eigen, use_fp32);
   } else if (myarch==avx512vnni) {
-    benchmarkLoop<avx512vnni>(iterations, matrices, align, use_fbgemm, use_eigen);
+    benchmarkLoop<avx512vnni>(iterations, matrices, align, use_fbgemm, use_eigen, use_fp32);
   } else if (myarch==any) {
-    benchmarkLoop<any>(iterations, matrices, align, use_fbgemm, use_eigen);
+    benchmarkLoop<any>(iterations, matrices, align, use_fbgemm, use_eigen, use_fp32);
   }
 
   return 0;
