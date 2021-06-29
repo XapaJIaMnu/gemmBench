@@ -72,5 +72,5 @@ if(WITH_MKL)
   list(APPEND LIBRARIES gomp)
 endif()
 
-add_executable(bench bench.cpp libs/intgemm/intgemm.cc)
+add_executable(bench bench.cpp libs/intgemm/intgemm/intgemm.cc)
 target_link_libraries(bench ${LIBRARIES})

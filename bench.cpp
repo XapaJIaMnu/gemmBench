@@ -4,7 +4,7 @@
 #include <iostream>
 #include "dnnl.h"
 #include <chrono>
-#include "intgemm.h"
+#include "intgemm/intgemm.h"
 #include "aligned.h"
 #include <unordered_map>
 #include "fbgemm_tests.h"
@@ -53,8 +53,8 @@ static std::unordered_map<std::string, Arch> ArchMap = {
 template<Arch A> struct archInfo;
 
 template<> struct archInfo<Arch::ssse3> {
-  using intgemm_ = intgemm::SSSE3_8bit;
-  using intgemmShift_ = intgemm::SSSE3_8bit;
+  using intgemm_ = intgemm::SSSE3::Kernels8;
+  using intgemmShift_ = intgemm::SSSE3::Kernels8;
   dnnl_cpu_isa_t dnnl_ = dnnl_cpu_isa_t::dnnl_cpu_isa_sse41;
 #ifdef WITH_MKL
   int mkl_ = MKL_ENABLE_SSE4_2;
@@ -63,8 +63,8 @@ template<> struct archInfo<Arch::ssse3> {
 };
 
 template<> struct archInfo<Arch::avx2> {
-  using intgemm_ = intgemm::AVX2_8bit;
-  using intgemmShift_ = intgemm::AVX2_8bit;
+  using intgemm_ = intgemm::AVX2::Kernels8;
+  using intgemmShift_ = intgemm::AVX2::Kernels8;
   dnnl_cpu_isa_t dnnl_ = dnnl_cpu_isa_avx2;
 #ifdef WITH_MKL
   int mkl_ = MKL_ENABLE_AVX2;
@@ -73,8 +73,8 @@ template<> struct archInfo<Arch::avx2> {
 };
 
 template<> struct archInfo<Arch::avx512> {
-  using intgemm_ = intgemm::AVX512_8bit;
-  using intgemmShift_ = intgemm::AVX512_8bit;
+  using intgemm_ = intgemm::AVX512BW::Kernels8;;
+  using intgemmShift_ = intgemm::AVX512BW::Kernels8;;
   dnnl_cpu_isa_t dnnl_ = dnnl_cpu_isa_avx512_core;
 #ifdef WITH_MKL
   int mkl_ = MKL_ENABLE_AVX512;
@@ -83,8 +83,8 @@ template<> struct archInfo<Arch::avx512> {
 };
 
 template<> struct archInfo<Arch::avx512vnni> {
-  using intgemm_ = intgemm::AVX512VNNI_8bit;
-  using intgemmShift_ = intgemm::AVX512VNNI_8bit;
+  using intgemm_ = intgemm::AVX512VNNI::Kernels8;
+  using intgemmShift_ = intgemm::AVX512VNNI::Kernels8;
   dnnl_cpu_isa_t dnnl_ = dnnl_cpu_isa_avx512_core_vnni;
 #ifdef WITH_MKL
   int mkl_ = MKL_ENABLE_AVX512_E1;
