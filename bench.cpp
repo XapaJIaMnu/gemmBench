@@ -134,6 +134,8 @@ void benchmarkLoop(int iterations, std::vector<matrix_size>& matrices, const siz
   std::chrono::duration<double> dnnl32_duration_loop = std::chrono::duration<double>::zero();
   std::chrono::duration<double> mkl_duration_loop = std::chrono::duration<double>::zero();
   std::chrono::duration<double> mkl32_duration_loop = std::chrono::duration<double>::zero();
+  std::chrono::duration<double> kenn_prepA_duration_loop = std::chrono::duration<double>::zero();
+  std::chrono::duration<double> kenn_prepB_duration_loop = std::chrono::duration<double>::zero();
   std::chrono::duration<double> kenn_duration_loop = std::chrono::duration<double>::zero();
   std::chrono::duration<double> kennU_duration_loop = std::chrono::duration<double>::zero();
   std::chrono::duration<double> fbgemm_duration_loop = std::chrono::duration<double>::zero();
@@ -317,10 +319,14 @@ void benchmarkLoop(int iterations, std::vector<matrix_size>& matrices, const siz
       alloc::AlignedVector<int8_t> A_prepared(M * K, align);
       alloc::AlignedVector<int8_t> B_prepared(K * N, align);
 
+      auto kenn_prepA_start = std::chrono::system_clock::now();
       archInfo<architecture>::intgemm_::PrepareA(A_proto.get(), A_prepared.get(), quant_mult, M, K);
+      auto kenn_prepA_end = std::chrono::system_clock::now();
       // Quantize and reshape B.
       // Typically you will do this once when parameters are loaded, not every time.
+      auto kenn_prepB_start = std::chrono::system_clock::now();
       archInfo<architecture>::intgemm_::PrepareB(B_proto.get(), B_prepared.get(), quant_mult, K, N);
+      auto kenn_prepB_end = std::chrono::system_clock::now();
 
       alloc::AlignedVector<float> C_kenn(M*N, align);
 
@@ -329,6 +335,9 @@ void benchmarkLoop(int iterations, std::vector<matrix_size>& matrices, const siz
       auto kenn_end = std::chrono::system_clock::now();
 
       kenn_duration_loop += (kenn_end - kenn_start);
+
+      kenn_prepA_duration_loop += (kenn_prepA_end - kenn_prepA_start);
+      kenn_prepB_duration_loop += (kenn_prepB_end - kenn_prepB_start);
           
       //MKL-DNN SignedXunsigned
       // Copy onto aligned memory
@@ -387,6 +396,7 @@ void benchmarkLoop(int iterations, std::vector<matrix_size>& matrices, const siz
 
       kennU_duration_loop += (kennU_end - kennU_start);
 
+
       //DNNLDNN Single precision
       alloc::AlignedVector<float> A_DNNL_S(M*K, align);
       alloc::AlignedVector<float> B_DNNL_S(K*N, align);
@@ -444,6 +454,8 @@ void benchmarkLoop(int iterations, std::vector<matrix_size>& matrices, const siz
         dnnlU_duration_loop = std::chrono::duration<double>::zero();
         dnnlS_duration_loop = std::chrono::duration<double>::zero();
         mkl_duration_loop = std::chrono::duration<double>::zero();
+        kenn_prepA_duration_loop = std::chrono::duration<double>::zero();
+        kenn_prepB_duration_loop = std::chrono::duration<double>::zero();
         kenn_duration_loop = std::chrono::duration<double>::zero();
         kennU_duration_loop = std::chrono::duration<double>::zero();
         fbgemm_duration_loop = std::chrono::duration<double>::zero();
@@ -454,24 +466,28 @@ void benchmarkLoop(int iterations, std::vector<matrix_size>& matrices, const siz
     std::cout.precision(10);
     std::cout << "Arch: " << myarch << std::endl << sizes << " in loop, for " << iterations << " interations:" << std::endl;
     if (use_eigen)
-      std::cout <<"      Eigen i32gemm took: " << eigen_duration_loop.count() << " seconds." << std::endl;
+      std::cout <<"                    Eigen i32gemm took: " << eigen_duration_loop.count() << " seconds." << std::endl;
 
-    std::cout <<  "  dnnl s8s8s32 gemm took: " << dnnl_duration_loop.count() << " seconds." << std::endl <<
-                  "  dnnl u8s8s32 gemm took: " << dnnlU_duration_loop.count() << " seconds." << std::endl <<
-                  "         dnnl sgemm took: " << dnnlS_duration_loop.count() << " seconds." << std::endl;
+    std::cout <<  "                dnnl s8s8s32 gemm took: " << dnnl_duration_loop.count() << " seconds." << std::endl <<
+                  "                dnnl u8s8s32 gemm took: " << dnnlU_duration_loop.count() << " seconds." << std::endl <<
+                  "                       dnnl sgemm took: " << dnnlS_duration_loop.count() << " seconds." << std::endl;
 #ifdef WITH_MKL
-      std::cout <<" cblas_gemm_s8u8s32 took: " << mkl_duration_loop.count() << " seconds." << std::endl;
+      std::cout <<"               cblas_gemm_s8u8s32 took: " << mkl_duration_loop.count() << " seconds." << std::endl;
     if (use_fp32)
-      std::cout <<"    MKL cblas_sgemm took: " << mkl32_duration_loop.count() << " seconds." << std::endl;
+      std::cout <<"                  MKL cblas_sgemm took: " << mkl32_duration_loop.count() << " seconds." << std::endl;
 #endif
     if (use_fp32)
-      std::cout <<"   DNNL cblas_sgemm took: " << dnnl32_duration_loop.count() << " seconds." << std::endl;
-  std::cout <<    "            Intgemm took: " << kenn_duration_loop.count() << " seconds." << std::endl <<
-                  "    Intgemm Shifted took: " << kennU_duration_loop.count() << " seconds." << std::endl;
+      std::cout <<"                 DNNL cblas_sgemm took: " << dnnl32_duration_loop.count() << " seconds." << std::endl;
+  std::cout <<    "                          Intgemm took: " << kenn_duration_loop.count() << " seconds." << std::endl <<
+                  "                  Intgemm Shifted took: " << kennU_duration_loop.count() << " seconds." << std::endl <<
+                  "               Intgemm with prepA took: " << kenn_duration_loop.count() + kenn_prepA_duration_loop.count() << " seconds." << std::endl <<
+                  "             Intgemm with prepA+B took: " << kenn_duration_loop.count() + kenn_prepA_duration_loop.count() + kenn_prepB_duration_loop.count() << " seconds." << std::endl <<
+                  "  Intgemm Shifted took with prepA took: " << kennU_duration_loop.count() + kenn_prepA_duration_loop.count() << " seconds." << std::endl <<
+                  "Intgemm Shifted took with prepA+B took: " << kennU_duration_loop.count() + kenn_prepA_duration_loop.count() + kenn_prepB_duration_loop.count()<< " seconds." << std::endl;
     if (use_fbgemm) {
       std::cout << 
                   //"fbgemm SparseXDense took: " << fbgemmSPM_duration_loop.count() << " seconds." << std::endl <<
-                  "      fbgemm Packed took: " << fbgemm_duration_loop.count() << " seconds." << std::endl;
+                  "                    fbgemm Packed took: " << fbgemm_duration_loop.count() << " seconds." << std::endl;
     }
                   
                      std::cout << "Alignment was: " << align << "." << std::endl;
