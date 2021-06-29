@@ -537,14 +537,14 @@ int main(int argc, char const *argv[]) {
   bool use_fp32 = false; // Compare the 32bit thingies.
 
   std::vector<matrix_size> matrices = {
-    {1024, 1024, 1024},
-    {256, 10368, 256},
-    {256, 5312, 256},
-    {8, 2048, 256},
-    {320, 256, 256},
-    {472, 256, 256},
-    {248, 256, 256},
-    {200, 256, 256},
+    {128, 128, 32},
+    {128, 128, 128},
+    {64, 64, 32},
+    {64, 32, 64},
+    {11, 64, 16},
+    {11, 64, 8},
+    {1, 128, 8},
+    {1, 64, 32},
     {1, 64, 8}};//zero, one, two, three, four, five, six, seven, eight};
 
   //fbgemm only supports AVX2 and above and doesn't support architecture limitations
