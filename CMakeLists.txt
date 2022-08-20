@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.5)
 project(gemmBench)
 
-option(WITH_MKL "Include Intel MKL" OFF)
+option(WITH_MKL "Include Intel MKL" ON)
 
 execute_process(COMMAND git submodule update --init --recursive --no-fetch
                 WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
@@ -12,10 +12,14 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 set(DNNL_BUILD_TESTS OFF CACHE BOOL "Disable dnnl tests")
+set(DNNL_BUILD_EXAMPLES OFF CACHE BOOL "Disable dnnl examples")
+set(DNNL_ENABLE_JIT_PROFILING OFF CACHE INTERNAL "" FORCE)
+set(DNNL_CPU_RUNTIME SEQ CACHE INTERNAL "" FORCE) # Disable OPENMP
+
 set(INTGEMM_DONT_BUILD_TESTS ON CACHE BOOL "Disable intgemm tests")
 
-set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native")
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native -Wno-deprecated-anon-enum-enum-conversion")
 
 add_subdirectory(libs/intgemm)
 add_subdirectory(libs/mkl-dnn)
